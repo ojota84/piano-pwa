@@ -4,6 +4,8 @@ export type NoteDuration = 'whole' | 'half' | 'quarter' | 'eighth';
 
 export type SolfegeStep = 'Do' | 'Ré' | 'Mi' | 'Fa' | 'Sol' | 'La' | 'Si';
 
+export type TrainingCategory = 'landmarks' | 'bass_clef' | 'intervals' | 'repertoire';
+
 export interface MusicalNote {
   id: string;
   solfegePitch: string; // e.g. "Do 4", "Ré 4", "Mi 4"
@@ -17,7 +19,10 @@ export interface MusicalNote {
 
 export interface PartitionPiece {
   id: string;
+  category: TrainingCategory;
+  levelNumber: number;
   title: string;
+  subtitle?: string;
   composer?: string;
   difficulty: 'Débutant' | 'Élémentaire' | 'Intermédiaire';
   clef: ClefType;
@@ -27,4 +32,5 @@ export interface PartitionPiece {
   description: string;
   notes: MusicalNote[];
   learningFocus: string;
+  estimatedMinutes?: number;
 }
