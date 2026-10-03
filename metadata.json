@@ -1,0 +1,6 @@
+{
+  "name": "Cadence - Piano Sight-Reading & Ear Trainer",
+  "description": "Mobile-optimized piano learning app with real-time acoustic microphone pitch detection, interactive musical notation partitions, sight-reading challenges, and music theory.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
