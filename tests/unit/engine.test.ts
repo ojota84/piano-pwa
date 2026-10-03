@@ -12,6 +12,8 @@ describe('PracticeEngine Unit Tests (Core Domain)', () => {
 
     testPiece = {
       id: 'test-piece',
+      category: 'landmarks',
+      levelNumber: 1,
       title: 'Do-Ré-Mi Initiation',
       difficulty: 'Débutant',
       clef: 'treble',
