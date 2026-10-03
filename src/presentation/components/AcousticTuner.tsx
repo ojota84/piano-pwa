@@ -83,14 +83,14 @@ export const AcousticTuner: React.FC<AcousticTunerProps> = ({
   const handleSensitivity = (preset: 'high' | 'normal' | 'low') => {
     setSensitivityPreset(preset);
     if (preset === 'high') {
-      onSetSensitivity(0.001);
-      onSetGain(3.8);
+      onSetSensitivity(0.0006);
+      onSetGain(4.5);
     } else if (preset === 'normal') {
-      onSetSensitivity(0.0025);
-      onSetGain(2.5);
+      onSetSensitivity(0.0018);
+      onSetGain(3.0);
     } else {
-      onSetSensitivity(0.005);
-      onSetGain(1.5);
+      onSetSensitivity(0.0040);
+      onSetGain(1.8);
     }
   };
 

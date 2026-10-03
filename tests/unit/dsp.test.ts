@@ -80,6 +80,38 @@ describe('Acoustic DSP Pitch Extraction Tests', () => {
     expect(result.midi).toBe(60);
   });
 
+  it('should detect synthetic 392.00 Hz sine wave as Sol 4 (MIDI 67)', () => {
+    const buffer = generateSineWave(392.0);
+    const result = adapter.detectPitch(buffer, sampleRate, 'running');
+
+    expect(result.isPitched).toBe(true);
+    expect(result.solfegeName).toBe('Sol');
+    expect(result.octave).toBe(4);
+    expect(result.midi).toBe(67);
+    expect(Math.abs(result.frequency - 392.0)).toBeLessThan(2);
+  });
+
+  it('should detect fundamental Sol 4 even in the presence of strong 2nd harmonic (784 Hz)', () => {
+    const complexBuffer = generatePianoHarmonicTone(392.0);
+    const result = adapter.detectPitch(complexBuffer, sampleRate, 'running');
+
+    expect(result.isPitched).toBe(true);
+    expect(result.solfegeName).toBe('Sol');
+    expect(result.octave).toBe(4);
+    expect(result.midi).toBe(67);
+  });
+
+  it('should detect synthetic 523.25 Hz sine wave as Do 5 (MIDI 72)', () => {
+    const buffer = generateSineWave(523.25);
+    const result = adapter.detectPitch(buffer, sampleRate, 'running');
+
+    expect(result.isPitched).toBe(true);
+    expect(result.solfegeName).toBe('Do');
+    expect(result.octave).toBe(5);
+    expect(result.midi).toBe(72);
+    expect(Math.abs(result.frequency - 523.25)).toBeLessThan(3);
+  });
+
   it('should reject pure silence as unpitched', () => {
     const silence = new Float32Array(bufferSize);
     const result = adapter.detectPitch(silence, sampleRate, 'running');

@@ -63,7 +63,12 @@ export class PracticeEngine {
       return { status: 'IGNORED' };
     }
 
-    if (detectedPitch.midi === target.midi) {
+    // Pitch matching: Exact MIDI note or acoustic harmonic resonance of the same Solfège note (within +/- 1 octave)
+    const isTargetPitchMatch =
+      detectedPitch.midi === target.midi ||
+      (detectedPitch.solfegeName === target.step && Math.abs(detectedPitch.midi - target.midi) <= 12);
+
+    if (isTargetPitchMatch) {
       this.consecutiveTargetCount++;
 
       if (this.consecutiveTargetCount >= PracticeEngine.CONSECUTIVE_FRAMES_REQUIRED) {

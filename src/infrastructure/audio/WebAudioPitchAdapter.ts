@@ -18,11 +18,11 @@ export class WebAudioPitchAdapter implements AudioPitchPort {
   private readonly maxFreq = 1080;
 
   // Balanced RMS silence threshold & solid digital preamp gain
-  private silenceThresholdRms = 0.0025;
-  private inputGainMultiplier = 2.5;
+  private silenceThresholdRms = 0.0018;
+  private inputGainMultiplier = 3.0;
 
   public setSensitivityThreshold(threshold: number): void {
-    this.silenceThresholdRms = Math.max(0.0008, threshold);
+    this.silenceThresholdRms = Math.max(0.0006, threshold);
   }
 
   public setInputGain(multiplier: number): void {
@@ -222,8 +222,8 @@ export class WebAudioPitchAdapter implements AudioPitchPort {
       }
     }
 
-    // Correlation confidence threshold
-    if (maxOverallCorr < 0.60) {
+    // Correlation confidence threshold (calibrated for acoustic piano treble strings)
+    if (maxOverallCorr < 0.38) {
       return {
         frequency: 0,
         solfegeName: '',
@@ -235,12 +235,13 @@ export class WebAudioPitchAdapter implements AudioPitchPort {
         isPitched: false,
         audioState,
         sampleRate,
-        debugMessage: `Bruit ambiant (Confiance ${Math.round(maxOverallCorr * 100)}% < 60%)`,
+        debugMessage: `Bruit ambiant (Confiance ${Math.round(maxOverallCorr * 100)}% < 38%)`,
       };
     }
 
-    // 3. Find the FIRST local peak whose correlation is >= 0.82 * maxOverallCorr.
-    const peakThreshold = Math.max(0.60, maxOverallCorr * 0.82);
+    // 3. Find the FIRST local peak whose correlation is >= peakThreshold.
+    // The first peak corresponds strictly to fundamental period T0.
+    const peakThreshold = Math.max(0.38, maxOverallCorr * 0.75);
     let bestLag = -1;
 
     for (let lag = minLag + 1; lag < maxLag; lag++) {

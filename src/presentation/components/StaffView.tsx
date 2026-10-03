@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import { MusicalNote, ClefType } from '../../core/models/music.types.ts';
 import { getDiatonicStaffPosition } from '../../core/theory/musicTheory.ts';
 
@@ -15,6 +15,8 @@ export const StaffView: React.FC<StaffViewProps> = ({
   clef,
   lastMismatch,
 }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+
   // 5 Staff Lines:
   // Line 5 (Top): y = 50
   // Line 4: y = 70
@@ -29,13 +31,60 @@ export const StaffView: React.FC<StaffViewProps> = ({
   const svgWidth = Math.max(540, startX + notes.length * noteSpacing + 60);
   const svgHeight = 230;
 
+  // Auto-center the partition viewport around the active note being played
+  useEffect(() => {
+    const centerActiveNote = () => {
+      if (!containerRef.current) return;
+      const container = containerRef.current;
+      const svg = container.querySelector('svg');
+      if (!svg) return;
+
+      const currentNoteX = startX + currentIndex * noteSpacing;
+      const svgRect = svg.getBoundingClientRect();
+      const scale = svgRect.width / svgWidth;
+
+      const notePixelX = currentNoteX * scale;
+      const containerVisibleWidth = container.clientWidth;
+      const scrollTarget = notePixelX - containerVisibleWidth / 2;
+
+      container.scrollTo({
+        left: Math.max(0, scrollTarget),
+        behavior: 'smooth',
+      });
+    };
+
+    // Immediate center + RAF for mobile rendering stability
+    centerActiveNote();
+    const rafId = requestAnimationFrame(centerActiveNote);
+    window.addEventListener('resize', centerActiveNote);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      window.removeEventListener('resize', centerActiveNote);
+    };
+  }, [currentIndex, notes.length, svgWidth]);
+
   return (
-    <div className="w-full overflow-x-auto rounded-2xl bg-white p-4 shadow-xl border border-slate-200 select-none">
-      <svg
-        viewBox={`0 0 ${svgWidth} ${svgHeight}`}
-        className="w-full h-48 sm:h-56"
-        style={{ minWidth: `${svgWidth}px` }}
+    <div className="relative w-full rounded-2xl bg-white shadow-xl border border-slate-200 select-none overflow-hidden">
+      {/* Pinned Clef Badge for Mobile (stays visible even when scrolled far right) */}
+      <div className="absolute top-2.5 left-3 z-10 bg-slate-900/90 text-white backdrop-blur-md px-2.5 py-1 rounded-lg text-[11px] font-bold shadow-md border border-slate-700 flex items-center gap-1.5 pointer-events-none">
+        <span className="text-amber-400 font-serif text-sm">
+          {clef === 'treble' ? '𝄞' : '𝄢'}
+        </span>
+        <span>Clé de {clef === 'treble' ? 'Sol' : 'Fa'}</span>
+      </div>
+
+      {/* Auto-Centering Scroll Container */}
+      <div
+        ref={containerRef}
+        className="w-full overflow-x-auto p-4 scroll-smooth scrollbar-thin scrollbar-thumb-slate-300"
+        style={{ WebkitOverflowScrolling: 'touch' }}
       >
+        <svg
+          viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+          className="w-full h-48 sm:h-56"
+          style={{ minWidth: `${svgWidth}px` }}
+        >
         {/* Background */}
         <rect x="0" y="0" width={svgWidth} height={svgHeight} fill="#ffffff" />
 
@@ -285,6 +334,7 @@ export const StaffView: React.FC<StaffViewProps> = ({
           );
         })}
       </svg>
+      </div>
     </div>
   );
 };
