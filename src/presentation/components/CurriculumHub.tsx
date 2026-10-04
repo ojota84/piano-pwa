@@ -1,18 +1,7 @@
 import React, { useState } from 'react';
-import {
-  Music,
-  Award,
-  BookOpen,
-  Sparkles,
-  Smartphone,
-  ChevronRight,
-  CheckCircle2,
-  Clock,
-  Play,
-  Layers,
-} from 'lucide-react';
+import { Check, Search, X } from 'lucide-react';
 import { PartitionPiece, TrainingCategory } from '../../core/models/music.types.ts';
-import { ProgressStorage, LevelProgress } from '../../infrastructure/storage/ProgressStorage.ts';
+import { ProgressStorage } from '../../infrastructure/storage/ProgressStorage.ts';
 
 interface CurriculumHubProps {
   levels: PartitionPiece[];
@@ -20,44 +9,15 @@ interface CurriculumHubProps {
   onOpenGuide: () => void;
 }
 
-interface CategoryMeta {
-  id: TrainingCategory | 'all';
-  label: string;
-  icon: React.ReactNode;
-  description: string;
-}
+type FilterOption = 'all' | 'treble' | 'bass' | TrainingCategory;
 
-const CATEGORIES: CategoryMeta[] = [
-  {
-    id: 'all',
-    label: 'Tous les Niveaux',
-    icon: <Layers className="w-4 h-4" />,
-    description: 'Parcours complet d’apprentissage du Solfège au piano',
-  },
-  {
-    id: 'landmarks',
-    label: 'Repères (5 Doigts)',
-    icon: <Sparkles className="w-4 h-4 text-amber-400" />,
-    description: 'Ancrage du Do central, repérage spatial et position fixe',
-  },
-  {
-    id: 'bass_clef',
-    label: 'Clé de Fa',
-    icon: <BookOpen className="w-4 h-4 text-sky-400" />,
-    description: 'Déchiffrage de la main gauche dans le registre grave',
-  },
-  {
-    id: 'intervals',
-    label: 'Intervalles & Sauts',
-    icon: <Music className="w-4 h-4 text-indigo-400" />,
-    description: 'Lecture en tierces, quartes, quintes et octave complète',
-  },
-  {
-    id: 'repertoire',
-    label: 'Répertoire Réel',
-    icon: <Award className="w-4 h-4 text-emerald-400" />,
-    description: 'Beethoven, Satie, airs traditionnels et thèmes intemporels',
-  },
+const FILTERS: { id: FilterOption; label: string }[] = [
+  { id: 'all', label: 'Tous' },
+  { id: 'treble', label: '𝄞 Clé de Sol' },
+  { id: 'bass', label: '𝄢 Clé de Fa' },
+  { id: 'landmarks', label: 'Repères' },
+  { id: 'intervals', label: 'Intervalles' },
+  { id: 'repertoire', label: 'Répertoire' },
 ];
 
 export const CurriculumHub: React.FC<CurriculumHubProps> = ({
@@ -65,223 +25,166 @@ export const CurriculumHub: React.FC<CurriculumHubProps> = ({
   onSelectLevel,
   onOpenGuide,
 }) => {
-  const [selectedCategory, setSelectedCategory] = useState<TrainingCategory | 'all'>('all');
+  const [activeFilter, setActiveFilter] = useState<FilterOption>('all');
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const progressMap = ProgressStorage.getProgress();
 
-  const filteredLevels = selectedCategory === 'all'
-    ? levels
-    : levels.filter((l) => l.category === selectedCategory);
+  const filteredLevels = levels.filter((piece) => {
+    const matchesFilter =
+      activeFilter === 'all'
+        ? true
+        : activeFilter === 'treble'
+        ? piece.clef === 'treble'
+        : activeFilter === 'bass'
+        ? piece.clef === 'bass'
+        : piece.category === activeFilter;
+
+    const query = searchQuery.trim().toLowerCase();
+    const matchesQuery =
+      query === '' ||
+      piece.title.toLowerCase().includes(query) ||
+      (piece.composer && piece.composer.toLowerCase().includes(query)) ||
+      String(piece.levelNumber).includes(query);
+
+    return matchesFilter && matchesQuery;
+  });
 
   const completedCount = levels.filter((l) => progressMap[l.id]?.completed).length;
-  const progressPercent = Math.round((completedCount / levels.length) * 100);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
-      {/* Top Header */}
-      <header className="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-40 px-4 py-3.5 shadow-md">
-        <div className="max-w-5xl mx-auto flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center text-slate-950 font-black shadow-lg shadow-amber-500/20">
-              <Music className="w-5 h-5 text-slate-950" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-extrabold text-lg tracking-tight text-white">Cadence</span>
-                <span className="text-[10px] text-amber-400 font-extrabold uppercase tracking-widest bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
-                  Conservatoire
-                </span>
-              </div>
-              <p className="text-xs text-slate-400">Méthode de Solfège interactif pour piano acoustique</p>
-            </div>
-          </div>
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-amber-500/20">
+      {/* Minimalist Top Bar */}
+      <header className="border-b border-slate-900 px-4 sm:px-6 py-3">
+        <div className="max-w-3xl mx-auto flex items-center justify-between">
+          <span className="font-semibold text-base tracking-tight text-slate-100">
+            Cadence
+          </span>
 
-          <button
-            onClick={onOpenGuide}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-all shadow-sm"
-          >
-            <Smartphone className="w-4 h-4 text-amber-400" />
-            <span className="hidden sm:inline">Guide du pupitre</span>
-          </button>
+          <div className="flex items-center gap-5 text-xs text-slate-400">
+            <span className="tabular-nums">
+              {completedCount}/{levels.length} terminés
+            </span>
+            <button
+              onClick={onOpenGuide}
+              className="text-slate-400 hover:text-slate-100 transition-colors cursor-pointer"
+            >
+              Guide
+            </button>
+          </div>
         </div>
       </header>
 
-      {/* Main Catalog View */}
-      <main className="flex-1 max-w-5xl w-full mx-auto p-4 sm:p-6 flex flex-col gap-6">
-        {/* Curriculum Banner & Overall Progress */}
-        <section className="rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900/90 to-amber-950/40 border border-slate-800 p-5 sm:p-6 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-5">
-          <div className="max-w-xl">
-            <div className="inline-flex items-center gap-2 text-xs font-bold text-amber-400 uppercase tracking-wider mb-1">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Votre Programme d’Entraînement</span>
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-              Choisissez votre niveau de pratique
-            </h1>
-            <p className="text-sm text-slate-400 mt-1.5 leading-relaxed">
-              Posez votre téléphone sur le pupitre de votre piano. L’application écoute vos notes réelles avec Solfège fixe et fait défiler la partition sans toucher l’écran.
-            </p>
-          </div>
-
-          {/* Progress Card */}
-          <div className="w-full md:w-auto bg-slate-950/80 border border-slate-800/80 rounded-2xl p-4 min-w-[240px] flex flex-col gap-2.5">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-400 font-medium">Progression globale</span>
-              <span className="font-mono font-bold text-amber-400">
-                {completedCount} / {levels.length} validés
-              </span>
-            </div>
-            {/* Progress Bar */}
-            <div className="w-full h-2.5 bg-slate-800 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-amber-500 to-emerald-400 transition-all duration-500 rounded-full"
-                style={{ width: `${progressPercent}%` }}
-              />
-            </div>
-            <div className="flex items-center justify-between text-[11px] text-slate-500 pt-0.5">
-              <span>{progressPercent}% complété</span>
-              <span className="text-emerald-400 font-semibold">14 Niveaux disponibles</span>
-            </div>
-          </div>
-        </section>
-
-        {/* Category Navigation Pills */}
-        <section className="flex flex-col gap-3">
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
-            {CATEGORIES.map((cat) => {
-              const isActive = selectedCategory === cat.id;
-              const count = cat.id === 'all'
-                ? levels.length
-                : levels.filter((l) => l.category === cat.id).length;
-
+      {/* Compact Filter & Lesson List */}
+      <main className="flex-1 max-w-3xl w-full mx-auto px-4 sm:px-6 py-4 flex flex-col gap-4">
+        {/* Compact Search & Clef/Category Filter Row */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-900">
+          {/* Clean Unboxed Filter Tabs */}
+          <nav className="flex items-center gap-4 overflow-x-auto no-scrollbar py-1">
+            {FILTERS.map((f) => {
+              const isActive = activeFilter === f.id;
               return (
                 <button
-                  key={cat.id}
-                  onClick={() => setSelectedCategory(cat.id)}
-                  className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap border ${
+                  key={f.id}
+                  onClick={() => setActiveFilter(f.id)}
+                  className={`text-xs whitespace-nowrap transition-colors cursor-pointer pb-1 ${
                     isActive
-                      ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md shadow-amber-500/20'
-                      : 'bg-slate-900/80 text-slate-300 border-slate-800 hover:bg-slate-800 hover:border-slate-700'
+                      ? 'text-amber-400 font-semibold border-b border-amber-400'
+                      : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
-                  {cat.icon}
-                  <span>{cat.label}</span>
-                  <span
-                    className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
-                      isActive ? 'bg-slate-950/20 text-slate-950 font-bold' : 'bg-slate-800 text-slate-400'
-                    }`}
-                  >
-                    {count}
-                  </span>
+                  {f.label}
                 </button>
               );
             })}
-          </div>
+          </nav>
 
-          <p className="text-xs text-slate-400 px-1">
-            {CATEGORIES.find((c) => c.id === selectedCategory)?.description}
-          </p>
-        </section>
-
-        {/* Levels Grid */}
-        <section className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-8">
-          {filteredLevels.map((piece) => {
-            const prog: LevelProgress | undefined = progressMap[piece.id];
-            const isCompleted = prog?.completed ?? false;
-
-            return (
-              <div
-                key={piece.id}
-                onClick={() => onSelectLevel(piece)}
-                className="group relative rounded-2xl bg-slate-900/70 border border-slate-800/90 hover:border-amber-500/50 hover:bg-slate-900 transition-all duration-200 p-5 flex flex-col justify-between gap-4 cursor-pointer shadow-lg hover:shadow-amber-500/5"
+          {/* Compact Minimal Search Input */}
+          <div className="relative flex items-center sm:w-48">
+            <Search className="w-3.5 h-3.5 text-slate-500 absolute left-0 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Filtrer par titre..."
+              className="w-full bg-transparent pl-5 pr-5 py-1 text-xs text-slate-200 placeholder-slate-600 focus:outline-none border-b border-transparent focus:border-slate-700 transition-colors"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-0 text-slate-500 hover:text-slate-300"
+                aria-label="Effacer la recherche"
               >
-                <div>
-                  {/* Top Badges */}
-                  <div className="flex items-center justify-between gap-2 mb-2.5">
-                    <div className="flex items-center gap-2">
-                      <span className="w-6 h-6 rounded-lg bg-amber-500/20 border border-amber-500/30 text-amber-400 text-xs font-mono font-extrabold flex items-center justify-center">
-                        {piece.levelNumber}
-                      </span>
-                      <span className="text-[11px] font-bold text-slate-400">
-                        {piece.category === 'landmarks' && 'Repères & Doigtés'}
-                        {piece.category === 'bass_clef' && 'Clé de Fa'}
-                        {piece.category === 'intervals' && 'Intervalles'}
-                        {piece.category === 'repertoire' && (piece.composer || 'Répertoire')}
-                      </span>
-                    </div>
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
 
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] font-extrabold uppercase tracking-wide bg-slate-800 text-amber-300 px-2 py-0.5 rounded-md border border-slate-700 flex items-center gap-1 font-serif">
-                        <span>{piece.clef === 'treble' ? '𝄞' : '𝄢'}</span>
-                        <span className="font-sans">Clé de {piece.clef === 'treble' ? 'Sol' : 'Fa'}</span>
-                      </span>
+        {/* Minimalist Single-Line Lesson List */}
+        <div className="divide-y divide-slate-900">
+          {filteredLevels.length === 0 ? (
+            <p className="py-8 text-center text-xs text-slate-500">
+              Aucune leçon trouvée.
+            </p>
+          ) : (
+            filteredLevels.map((piece) => {
+              const isDone = progressMap[piece.id]?.completed ?? false;
+              const isTreble = piece.clef === 'treble';
 
-                      <span
-                        className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md ${
-                          piece.difficulty === 'Débutant'
-                            ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                            : piece.difficulty === 'Élémentaire'
-                            ? 'bg-sky-500/15 text-sky-400 border border-sky-500/30'
-                            : 'bg-purple-500/15 text-purple-400 border border-purple-500/30'
-                        }`}
-                      >
-                        {piece.difficulty}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Title & Subtitle */}
-                  <h3 className="text-lg font-bold text-white group-hover:text-amber-300 transition-colors tracking-tight">
-                    {piece.title}
-                  </h3>
-                  {piece.subtitle && (
-                    <div className="text-xs text-amber-400/90 font-medium mt-0.5">
-                      {piece.subtitle}
-                    </div>
-                  )}
-
-                  <p className="text-xs text-slate-400 mt-2 line-clamp-2 leading-relaxed">
-                    {piece.description}
-                  </p>
-                </div>
-
-                {/* Card Footer: Metadata & Action CTA */}
-                <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between gap-3 text-xs">
-                  <div className="flex items-center gap-3 text-slate-400 text-[11px] font-mono">
-                    <span className="flex items-center gap-1">
-                      <Music className="w-3.5 h-3.5 text-amber-400" />
-                      <span>{piece.notes.length} notes</span>
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Clock className="w-3.5 h-3.5 text-slate-500" />
-                      <span>~{piece.estimatedMinutes || 3} min</span>
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    {isCompleted ? (
-                      <div className="flex items-center gap-1.5 text-emerald-400 font-bold text-xs bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>{prog.bestAccuracy}%</span>
-                      </div>
-                    ) : null}
-
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onSelectLevel(piece);
-                      }}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs bg-amber-500 hover:bg-amber-400 text-slate-950 transition-colors shadow-sm"
+              return (
+                <button
+                  key={piece.id}
+                  onClick={() => onSelectLevel(piece)}
+                  className="w-full py-3 px-1 flex items-center justify-between gap-4 text-left hover:bg-slate-900/50 transition-colors group cursor-pointer"
+                >
+                  {/* Left: Done status + Level Number + Title */}
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span
+                      className="w-5 flex items-center justify-center shrink-0"
+                      title={isDone ? 'Déjà effectué' : 'À faire'}
                     >
-                      <Play className="w-3 h-3 fill-current" />
-                      <span>S’entraîner</span>
-                      <ChevronRight className="w-3.5 h-3.5 -ml-0.5" />
-                    </button>
+                      {isDone ? (
+                        <Check className="w-4 h-4 text-emerald-400 stroke-[2.5]" />
+                      ) : (
+                        <span className="text-xs font-mono tabular-nums text-slate-600">
+                          {String(piece.levelNumber).padStart(2, '0')}
+                        </span>
+                      )}
+                    </span>
+
+                    <span
+                      className={`text-sm sm:text-base truncate transition-colors ${
+                        isDone
+                          ? 'text-slate-300 group-hover:text-white'
+                          : 'text-slate-100 font-medium group-hover:text-amber-300'
+                      }`}
+                    >
+                      {piece.title}
+                    </span>
                   </div>
-                </div>
-              </div>
-            );
-          })}
-        </section>
+
+                  {/* Right: Clear Clef Indicator (Clé de Sol / Clé de Fa) */}
+                  <div className="flex items-center gap-3 shrink-0">
+                    <span
+                      className={`text-xs flex items-center gap-1.5 ${
+                        isTreble ? 'text-amber-400/90' : 'text-sky-400/90'
+                      }`}
+                    >
+                      <span className="font-serif text-base leading-none">
+                        {isTreble ? '𝄞' : '𝄢'}
+                      </span>
+                      <span>Clé de {isTreble ? 'Sol' : 'Fa'}</span>
+                    </span>
+
+                    <span className="text-slate-600 group-hover:text-slate-300 text-xs transition-colors">
+                      →
+                    </span>
+                  </div>
+                </button>
+              );
+            })
+          )}
+        </div>
       </main>
     </div>
   );
