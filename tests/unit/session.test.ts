@@ -145,4 +145,30 @@ describe('TrainingSessionCoordinator Unit Tests (Hub <-> Training & Live Pitch E
     expect(finalFrame.snapshot.isCompleted).toBe(true);
     expect(finalFrame.snapshot.justCompletedLevel).toBe(true);
   });
+
+  it('should cleanly reset stopwatch and increment runId when Rejouer (resetLevel) is triggered', () => {
+    const startSnap = coordinator.startLevel(level5BassDo3);
+    const initialRunId = startSnap.runId;
+    expect(startSnap.hasPerformanceStarted).toBe(false);
+
+    // Play 1st note (Do 3) -> starts stopwatch & performance evaluation
+    coordinator.handlePitchDetected(do3Pitch);
+    const afterNote1 = coordinator.handlePitchDetected(do3Pitch);
+    expect(afterNote1.snapshot.hasPerformanceStarted).toBe(true);
+    expect(afterNote1.snapshot.lastMatchTimeMs).toBeGreaterThan(0);
+
+    // Click Rejouer (resetLevel)
+    const afterRejouer = coordinator.resetLevel();
+    expect(afterRejouer.runId).toBe(initialRunId + 1);
+    expect(afterRejouer.hasPerformanceStarted).toBe(false);
+    expect(afterRejouer.currentIndex).toBe(0);
+    expect(afterRejouer.elapsedSeconds).toBe(0);
+
+    // Play 1st note again on the replayed run -> stopwatch starts fresh!
+    coordinator.handlePitchDetected(do3Pitch);
+    const replayNote1 = coordinator.handlePitchDetected(do3Pitch);
+    expect(replayNote1.snapshot.hasPerformanceStarted).toBe(true);
+    expect(replayNote1.snapshot.currentIndex).toBe(1);
+    expect(replayNote1.snapshot.lastMatchTimeMs).toBeGreaterThan(0);
+  });
 });

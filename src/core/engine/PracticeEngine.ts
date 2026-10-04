@@ -16,10 +16,10 @@ import { getNoteTargetDurationMs } from '../theory/musicTheory.ts';
  *
  * Core Business Rules:
  * 1. Exact MIDI matching between target Solfège note and detected piano pitch.
- * 2. Performance evaluation starts ONLY when the 1st note (index 0) is played.
- * 3. Per-note Pitch & Rhythm Grading:
- *    - Tracks whether each note was played cleanly on the first try (pitch accuracy).
- *    - Evaluates inter-onset timing against the previous note's rhythmic duration at active BPM.
+ * 2. Performance evaluation & stopwatch start ONLY when the 1st note (index 0) is played.
+ * 3. Supports two lesson modes:
+ *    - 'lecture': Evaluates note reading accuracy (100% pitch accuracy).
+ *    - 'rythme': Evaluates both note reading accuracy and rhythmic timing at active BPM.
  * 4. 500ms refractory lockout + Harmonic & sustain decay lock to prevent string resonance/overtones
  *    (e.g. La 4 -> La 5) from false-triggering.
  * 5. 2-frame consecutive confirmation with pitch-cents stability and minimum confidence (>= 0.68).
@@ -82,6 +82,22 @@ export class PracticeEngine {
 
   public hasPerformanceStarted(): boolean {
     return this.hasStartedFirstNote;
+  }
+
+  public getLastMatchTimeMs(): number {
+    return this.lastMatchTimeMs;
+  }
+
+  /**
+   * Returns the expected time interval in milliseconds from the previous note's match
+   * to the current target note's strike, based on the previous note's rhythmic duration.
+   */
+  public getExpectedNextNoteIntervalMs(): number {
+    if (!this.partition || !this.hasStartedFirstNote || this.currentIndex <= 0) {
+      return 0;
+    }
+    const prevNote = this.partition.notes[this.currentIndex - 1];
+    return prevNote ? getNoteTargetDurationMs(prevNote.duration, this.tempoBpm) : 0;
   }
 
   public getNoteRecords(): NotePerformanceRecord[] {
@@ -235,7 +251,6 @@ export class PracticeEngine {
       this.consecutiveTargetCount = 0;
       this.lastCandidateCents = null;
       this.totalAttempts++;
-      // Only count wrong pitch attempts once the performance has begun or while attempting the note
       this.wrongAttemptsOnCurrentNote++;
       return {
         status: 'MISMATCH',
@@ -246,9 +261,9 @@ export class PracticeEngine {
   }
 
   /**
-   * Computes the end-of-level grading breakdown across all notes in the partition:
-   * - Which notes were played with the right pitch on the first try
-   * - Which notes were played at the right rhythm
+   * Computes the end-of-level grading breakdown across all notes in the partition.
+   * For 'lecture' lessons, overallScorePercent reflects pitch accuracy (100%).
+   * For 'rythme' lessons, overallScorePercent combines pitch (60%) and rhythm (40%).
    */
   public getGradeSummary(): LevelGradeSummary {
     const totalNotes = this.partition ? this.partition.notes.length : 0;
@@ -271,7 +286,11 @@ export class PracticeEngine {
     const evaluatedCount = Math.max(1, this.noteRecords.length);
     const pitchScorePercent = Math.round((correctPitchNotesCount / evaluatedCount) * 100);
     const rhythmScorePercent = Math.round((onTimeRhythmNotesCount / evaluatedCount) * 100);
-    const overallScorePercent = Math.round(pitchScorePercent * 0.6 + rhythmScorePercent * 0.4);
+
+    const isLectureOnly = this.partition?.mode === 'lecture';
+    const overallScorePercent = isLectureOnly
+      ? pitchScorePercent
+      : Math.round(pitchScorePercent * 0.6 + rhythmScorePercent * 0.4);
 
     let gradeLabel: LevelGradeSummary['gradeLabel'] = 'À retravailler';
     if (overallScorePercent >= 90) {
@@ -294,10 +313,6 @@ export class PracticeEngine {
     };
   }
 
-  /**
-   * Returns true if `candidateMidi` is the same note or a prominent piano string overtone
-   * of `fundamentalMidi` (+12 octave, +19 twelfth, +24 double octave).
-   */
   private isSameOrNaturalHarmonic(fundamentalMidi: number, candidateMidi: number): boolean {
     const diff = candidateMidi - fundamentalMidi;
     return diff === 0 || diff === 12 || diff === 19 || diff === 24;

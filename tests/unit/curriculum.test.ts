@@ -5,22 +5,20 @@ import { DifficultyLevel } from '../../src/core/models/music.types.ts';
 describe('Curriculum & Progressive Level Catalog Tests', () => {
   const allLevels = partitionRepository.getAllPartitions();
 
-  it('should contain 12 progressive lessons with reduced beginner drills and expanded advanced studies', () => {
-    expect(allLevels.length).toBe(12);
-    const beginner = partitionRepository.getPartitionsByDifficulty('Débutant');
-    const intermediate = partitionRepository.getPartitionsByDifficulty('Intermédiaire');
-    const advanced = partitionRepository.getPartitionsByDifficulty('Avancé');
+  it('should contain 14 progressive lessons divided into Lecture and Rythme modes', () => {
+    expect(allLevels.length).toBe(14);
+    const lectureLessons = partitionRepository.getPartitionsByMode('lecture');
+    const rhythmLessons = partitionRepository.getPartitionsByMode('rythme');
 
-    expect(beginner.length).toBe(3);
-    expect(intermediate.length).toBe(4);
-    expect(advanced.length).toBe(5);
+    expect(lectureLessons.length).toBe(8);
+    expect(rhythmLessons.length).toBe(6);
   });
 
   it('should have all 3 difficulty level tabs properly populated', () => {
     const levels: DifficultyLevel[] = ['Débutant', 'Intermédiaire', 'Avancé'];
     for (const diff of levels) {
       const items = partitionRepository.getPartitionsByDifficulty(diff);
-      expect(items.length).toBeGreaterThanOrEqual(3);
+      expect(items.length).toBeGreaterThanOrEqual(4);
     }
   });
 
@@ -29,7 +27,7 @@ describe('Curriculum & Progressive Level Catalog Tests', () => {
       .getPartitionsByDifficulty('Avancé')
       .filter((p) => p.clef === 'treble');
 
-    expect(advancedTreble.length).toBeGreaterThanOrEqual(4);
+    expect(advancedTreble.length).toBe(4);
 
     for (const piece of advancedTreble) {
       const midis = piece.notes.map((n) => n.midi);
@@ -54,5 +52,6 @@ describe('Curriculum & Progressive Level Catalog Tests', () => {
     const p1 = partitionRepository.getPartitionById('level-1-do-central');
     expect(p1).toBeDefined();
     expect(p1?.difficulty).toBe('Débutant');
+    expect(p1?.mode).toBe('lecture');
   });
 });

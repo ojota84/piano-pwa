@@ -1,6 +1,11 @@
 import React, { useState } from 'react';
 import { Check, Search, X } from 'lucide-react';
-import { PartitionPiece, DifficultyLevel, ClefType } from '../../core/models/music.types.ts';
+import {
+  PartitionPiece,
+  DifficultyLevel,
+  ClefType,
+  LessonMode,
+} from '../../core/models/music.types.ts';
 import { ProgressStorage } from '../../infrastructure/storage/ProgressStorage.ts';
 
 interface CurriculumHubProps {
@@ -10,6 +15,7 @@ interface CurriculumHubProps {
 }
 
 type LevelTab = 'all' | DifficultyLevel;
+type ModeFilter = 'all' | LessonMode;
 type ClefFilter = 'all' | ClefType;
 
 const LEVEL_TABS: { id: LevelTab; label: string }[] = [
@@ -25,13 +31,17 @@ export const CurriculumHub: React.FC<CurriculumHubProps> = ({
   onOpenGuide,
 }) => {
   const [selectedLevelTab, setSelectedLevelTab] = useState<LevelTab>('all');
+  const [selectedMode, setSelectedMode] = useState<ModeFilter>('all');
   const [selectedClef, setSelectedClef] = useState<ClefFilter>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const progressMap = ProgressStorage.getProgress();
 
   const filteredLevels = levels.filter((piece) => {
+    const pieceMode = piece.mode || 'lecture';
     const matchesLevel =
       selectedLevelTab === 'all' ? true : piece.difficulty === selectedLevelTab;
+    const matchesMode =
+      selectedMode === 'all' ? true : pieceMode === selectedMode;
     const matchesClef =
       selectedClef === 'all' ? true : piece.clef === selectedClef;
 
@@ -42,7 +52,7 @@ export const CurriculumHub: React.FC<CurriculumHubProps> = ({
       (piece.rangeLabel && piece.rangeLabel.toLowerCase().includes(query)) ||
       String(piece.levelNumber).includes(query);
 
-    return matchesLevel && matchesClef && matchesQuery;
+    return matchesLevel && matchesMode && matchesClef && matchesQuery;
   });
 
   const completedCount = levels.filter((l) => progressMap[l.id]?.completed).length;
@@ -72,7 +82,7 @@ export const CurriculumHub: React.FC<CurriculumHubProps> = ({
 
       {/* Compact Level Tabs & Lesson List */}
       <main className="flex-1 max-w-3xl w-full mx-auto px-4 sm:px-6 py-4 flex flex-col gap-3">
-        {/* Primary Level Tabs + Clef Toggle + Compact Search */}
+        {/* Primary Level Tabs + Mode & Clef Toggles + Compact Search */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-900">
           {/* Level Tabs (Tous / Débutant / Intermédiaire / Avancé) */}
           <nav className="flex items-center gap-5 overflow-x-auto no-scrollbar py-1" aria-label="Niveaux">
@@ -94,9 +104,37 @@ export const CurriculumHub: React.FC<CurriculumHubProps> = ({
             })}
           </nav>
 
-          {/* Right side: Clef Filter + Search Input */}
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2.5 text-xs">
+          {/* Right side: Mode (Lecture / Rythme) + Clef (Sol / Fa) + Search Input */}
+          <div className="flex flex-wrap items-center gap-3 text-xs">
+            {/* Lecture / Rythme filter */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setSelectedMode(selectedMode === 'lecture' ? 'all' : 'lecture')}
+                className={`cursor-pointer transition-colors ${
+                  selectedMode === 'lecture'
+                    ? 'text-emerald-400 font-semibold'
+                    : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                Lecture
+              </button>
+              <span className="text-slate-800">·</span>
+              <button
+                onClick={() => setSelectedMode(selectedMode === 'rythme' ? 'all' : 'rythme')}
+                className={`cursor-pointer transition-colors ${
+                  selectedMode === 'rythme'
+                    ? 'text-amber-400 font-semibold'
+                    : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                Rythme
+              </button>
+            </div>
+
+            <span className="text-slate-900">|</span>
+
+            {/* Clef filter */}
+            <div className="flex items-center gap-2">
               <button
                 onClick={() => setSelectedClef(selectedClef === 'treble' ? 'all' : 'treble')}
                 className={`cursor-pointer transition-colors ${
@@ -120,7 +158,7 @@ export const CurriculumHub: React.FC<CurriculumHubProps> = ({
               </button>
             </div>
 
-            <div className="relative flex items-center w-36 sm:w-44">
+            <div className="relative flex items-center w-32 sm:w-40">
               <Search className="w-3.5 h-3.5 text-slate-500 absolute left-0 pointer-events-none" />
               <input
                 type="text"
@@ -152,6 +190,7 @@ export const CurriculumHub: React.FC<CurriculumHubProps> = ({
             filteredLevels.map((piece) => {
               const isDone = progressMap[piece.id]?.completed ?? false;
               const isTreble = piece.clef === 'treble';
+              const isRhythm = piece.mode === 'rythme';
 
               return (
                 <button
@@ -185,14 +224,24 @@ export const CurriculumHub: React.FC<CurriculumHubProps> = ({
                     </span>
                   </div>
 
-                  {/* Right: Level label + Clear Clef Indicator (Clé de Sol / Clé de Fa) */}
-                  <div className="flex items-center gap-4 shrink-0">
-                    <span className="hidden sm:inline text-xs text-slate-500">
+                  {/* Right: Mode (Lecture / Rythme) + Level + Clef Indicator */}
+                  <div className="flex items-center gap-3 sm:gap-4 shrink-0 text-xs">
+                    <span
+                      className={`font-medium ${
+                        isRhythm ? 'text-amber-400/90' : 'text-emerald-400/90'
+                      }`}
+                    >
+                      {isRhythm ? 'Rythme' : 'Lecture'}
+                    </span>
+
+                    <span className="hidden md:inline text-slate-600">·</span>
+
+                    <span className="hidden md:inline text-slate-500 w-24 text-right">
                       {piece.difficulty}
                     </span>
 
                     <span
-                      className={`text-xs flex items-center gap-1.5 w-24 justify-end ${
+                      className={`flex items-center gap-1.5 w-24 justify-end ${
                         isTreble ? 'text-amber-400/90' : 'text-sky-400/90'
                       }`}
                     >
@@ -202,7 +251,7 @@ export const CurriculumHub: React.FC<CurriculumHubProps> = ({
                       <span>Clé de {isTreble ? 'Sol' : 'Fa'}</span>
                     </span>
 
-                    <span className="text-slate-600 group-hover:text-slate-300 text-xs transition-colors">
+                    <span className="text-slate-600 group-hover:text-slate-300 transition-colors">
                       →
                     </span>
                   </div>

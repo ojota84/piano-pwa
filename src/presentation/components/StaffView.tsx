@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-import { MusicalNote, ClefType } from '../../core/models/music.types.ts';
+import { MusicalNote, ClefType, LessonMode } from '../../core/models/music.types.ts';
 import { NotePerformanceRecord } from '../../core/models/pitch.types.ts';
 import {
   getDiatonicStaffPosition,
@@ -11,8 +11,10 @@ export interface StaffViewProps {
   notes: MusicalNote[];
   currentIndex: number;
   clef: ClefType;
+  mode?: LessonMode;
   timeSignature?: [number, number];
   noteRecords?: NotePerformanceRecord[];
+  beatProgress?: number; // 0.0 to 1.0+ live rhythm progress toward striking the current target note
   lastMismatch: boolean;
 }
 
@@ -20,11 +22,14 @@ export const StaffView: React.FC<StaffViewProps> = ({
   notes,
   currentIndex,
   clef,
+  mode = 'lecture',
   timeSignature = [4, 4],
   noteRecords = [],
+  beatProgress = 0,
   lastMismatch,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const isRhythmMode = mode === 'rythme';
 
   // 5 Staff Lines centered at y = 120 to accommodate wide spans (La 3 to Do 6):
   // Line 5 (Top): y = 80 (staffPos = +4)
@@ -188,23 +193,59 @@ export const StaffView: React.FC<StaffViewProps> = ({
             let halo = null;
 
             if (isCompleted) {
-              // Green if both pitch and rhythm were right, amber if off-rhythm or had a wrong pitch attempt
-              const isClean =
-                !record || (record.pitchCorrectFirstTry && record.rhythmStatus === 'on_time');
+              const isClean = isRhythmMode
+                ? !record || (record.pitchCorrectFirstTry && record.rhythmStatus === 'on_time')
+                : !record || record.pitchCorrectFirstTry;
               noteColor = isClean ? '#059669' : '#d97706';
               labelColor = isClean ? '#059669' : '#b45309';
             } else if (isTarget) {
-              noteColor = lastMismatch ? '#dc2626' : '#d97706'; // Red or Amber
-              labelColor = lastMismatch ? '#dc2626' : '#b45309';
+              // In Rhythm mode, when beatProgress enters the strike window (0.65..1.35), highlight green on the notehead!
+              const inStrikeZone = isRhythmMode && currentIndex > 0 && beatProgress >= 0.65 && beatProgress <= 1.35;
+              noteColor = lastMismatch
+                ? '#dc2626'
+                : inStrikeZone
+                ? '#059669'
+                : '#d97706';
+              labelColor = lastMismatch
+                ? '#dc2626'
+                : inStrikeZone
+                ? '#059669'
+                : '#b45309';
+
+              const ringRadius = 21;
+              const ringCircumference = 2 * Math.PI * ringRadius;
+              const clampedProgress = Math.min(1, Math.max(0, beatProgress));
 
               halo = (
-                <circle
-                  cx={x}
-                  cy={y}
-                  r="20"
-                  fill={lastMismatch ? '#fee2e2' : '#fef3c7'}
-                  opacity="0.85"
-                />
+                <g>
+                  <circle
+                    cx={x}
+                    cy={y}
+                    r="20"
+                    fill={
+                      lastMismatch
+                        ? '#fee2e2'
+                        : inStrikeZone
+                        ? '#d1fae5'
+                        : '#fef3c7'
+                    }
+                    opacity="0.85"
+                  />
+                  {/* Visual Rhythm Ring around the target note */}
+                  {isRhythmMode && currentIndex > 0 && beatProgress > 0 && (
+                    <circle
+                      cx={x}
+                      cy={y}
+                      r={ringRadius}
+                      fill="none"
+                      stroke={inStrikeZone ? '#059669' : beatProgress > 1.35 ? '#dc2626' : '#f59e0b'}
+                      strokeWidth="3"
+                      strokeDasharray={ringCircumference}
+                      strokeDashoffset={ringCircumference * (1 - clampedProgress)}
+                      transform={`rotate(-90 ${x} ${y})`}
+                    />
+                  )}
+                </g>
               );
             }
 
@@ -293,7 +334,7 @@ export const StaffView: React.FC<StaffViewProps> = ({
                 {/* Solfège Pitch Label */}
                 <text
                   x={x}
-                  y={238}
+                  y={isRhythmMode ? 238 : 244}
                   textAnchor="middle"
                   fontSize={isTarget ? '15' : '13'}
                   fontWeight={isTarget ? '700' : '500'}
@@ -303,26 +344,28 @@ export const StaffView: React.FC<StaffViewProps> = ({
                   {note.solfegePitch}
                 </text>
 
-                {/* Subtle Rhythm Duration & Timing Indicator */}
-                <text
-                  x={x}
-                  y={254}
-                  textAnchor="middle"
-                  fontSize="10"
-                  fontWeight="500"
-                  fill={
-                    isCompleted && record
-                      ? record.rhythmStatus === 'on_time'
-                        ? '#059669'
-                        : '#d97706'
-                      : isTarget
-                      ? labelColor
-                      : '#94a3b8'
-                  }
-                  className="font-mono select-none"
-                >
-                  {beatText}
-                </text>
+                {/* Rhythm Duration & Timing Indicator (only in Rythme mode) */}
+                {isRhythmMode && (
+                  <text
+                    x={x}
+                    y={254}
+                    textAnchor="middle"
+                    fontSize="10"
+                    fontWeight="500"
+                    fill={
+                      isCompleted && record
+                        ? record.rhythmStatus === 'on_time'
+                          ? '#059669'
+                          : '#d97706'
+                        : isTarget
+                        ? labelColor
+                        : '#94a3b8'
+                    }
+                    className="font-mono select-none"
+                  >
+                    {beatText}
+                  </text>
+                )}
 
                 {/* Fingering hint */}
                 {note.finger && (

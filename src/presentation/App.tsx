@@ -73,14 +73,14 @@ export default function App() {
     };
   }, [isListening, session.activeScreen]);
 
-  // Practice timer loop
+  // Practice timer loop (re-anchored on every runId / Rejouer)
   useEffect(() => {
     if (session.isCompleted || session.activeScreen !== 'training') return;
     const interval = setInterval(() => {
       setElapsedSeconds(coordinatorRef.current.getEngine().getElapsedTimeSeconds());
-    }, 1000);
+    }, 250);
     return () => clearInterval(interval);
-  }, [session.isCompleted, session.activeScreen]);
+  }, [session.isCompleted, session.activeScreen, session.runId, session.hasPerformanceStarted]);
 
   /**
    * Stable Audio Pitch Callback:
@@ -178,6 +178,7 @@ export default function App() {
         />
       ) : (
         <FocusTrainingView
+          runId={session.runId}
           level={session.selectedPiece}
           nextLevel={nextLevel}
           currentIndex={session.currentIndex}
@@ -185,6 +186,8 @@ export default function App() {
           elapsedSeconds={elapsedSeconds}
           isCompleted={session.isCompleted}
           hasPerformanceStarted={session.hasPerformanceStarted}
+          lastMatchTimeMs={session.lastMatchTimeMs}
+          expectedIntervalMs={session.expectedIntervalMs}
           tempoBpm={session.tempoBpm}
           gradeSummary={session.gradeSummary}
           isListening={isListening}

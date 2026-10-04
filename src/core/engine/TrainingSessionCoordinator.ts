@@ -9,11 +9,14 @@ import { PracticeEngine } from './PracticeEngine.ts';
 export type ScreenMode = 'hub' | 'training';
 
 export interface SessionSnapshot {
+  runId: number;
   activeScreen: ScreenMode;
   selectedPiece: PartitionPiece;
   currentIndex: number;
   isCompleted: boolean;
   hasPerformanceStarted: boolean;
+  lastMatchTimeMs: number;
+  expectedIntervalMs: number;
   tempoBpm: number;
   accuracy: number;
   gradeSummary: LevelGradeSummary;
@@ -27,10 +30,11 @@ export interface SessionSnapshot {
  * Pure Domain Coordinator for the 2-Screen Practice Journey ('hub' <-> 'training').
  *
  * Eliminates UI closure bugs by maintaining authoritative state for the active screen,
- * selected partition level, and PracticeEngine evaluation lifecycle.
+ * selected partition level, runId counter (for clean Rejouer resets), and PracticeEngine lifecycle.
  */
 export class TrainingSessionCoordinator {
   private readonly engine: PracticeEngine;
+  private runId = 1;
   private activeScreen: ScreenMode = 'hub';
   private selectedPiece: PartitionPiece;
   private lastMismatch = false;
@@ -47,6 +51,7 @@ export class TrainingSessionCoordinator {
    * and resets the PracticeEngine for that partition.
    */
   public startLevel(level: PartitionPiece): SessionSnapshot {
+    this.runId++;
     this.selectedPiece = level;
     this.activeScreen = 'training';
     this.lastMismatch = false;
@@ -56,8 +61,10 @@ export class TrainingSessionCoordinator {
 
   /**
    * Resets the current or specified partition while remaining in the current screen.
+   * Increments `runId` so UI timers, stopwatches, and rhythm progress bars reset cleanly.
    */
   public resetLevel(level: PartitionPiece = this.selectedPiece): SessionSnapshot {
+    this.runId++;
     this.selectedPiece = level;
     this.lastMismatch = false;
     this.engine.loadPartition(level);
@@ -128,11 +135,14 @@ export class TrainingSessionCoordinator {
 
   public getSnapshot(justCompletedLevel = false): SessionSnapshot {
     return {
+      runId: this.runId,
       activeScreen: this.activeScreen,
       selectedPiece: this.selectedPiece,
       currentIndex: this.engine.getCurrentIndex(),
       isCompleted: this.engine.isCompleted(),
       hasPerformanceStarted: this.engine.hasPerformanceStarted(),
+      lastMatchTimeMs: this.engine.getLastMatchTimeMs(),
+      expectedIntervalMs: this.engine.getExpectedNextNoteIntervalMs(),
       tempoBpm: this.engine.getTempoBpm(),
       accuracy: this.engine.getAccuracyPercentage(),
       gradeSummary: this.engine.getGradeSummary(),

@@ -8,6 +8,8 @@ export type TrainingCategory = 'landmarks' | 'bass_clef' | 'intervals' | 'repert
 
 export type DifficultyLevel = 'Débutant' | 'Intermédiaire' | 'Avancé';
 
+export type LessonMode = 'lecture' | 'rythme';
+
 export interface MusicalNote {
   id: string;
   solfegePitch: string; // e.g. "Do 4", "La 3", "Do 6"
@@ -22,6 +24,7 @@ export interface MusicalNote {
 export interface PartitionPiece {
   id: string;
   category: TrainingCategory;
+  mode?: LessonMode;     // 'lecture' (notes only) or 'rythme' (notes + tempo timing)
   levelNumber: number;
   title: string;
   subtitle?: string;
