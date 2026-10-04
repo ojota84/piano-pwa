@@ -8,16 +8,16 @@ import {
 } from '../../core/theory/musicTheory.ts';
 
 export interface StaffViewProps {
-  notes: MusicalNote[];
-  currentIndex: number;
-  clef: ClefType;
-  mode?: LessonMode;
-  timeSignature?: [number, number];
-  noteRecords?: NotePerformanceRecord[];
-  beatProgress?: number;     // 0.0 to 1.0+ progress toward the strike moment of the active note
-  preStartBeatProgress?: number; // 0.0 to 1.0 beat sweep on Note 1 before performance starts
-  currentBeat?: number;      // 1..beatsPerMeasure
-  lastMismatch: boolean;
+  readonly notes: readonly MusicalNote[];
+  readonly currentIndex: number;
+  readonly clef: ClefType;
+  readonly mode?: LessonMode;
+  readonly timeSignature?: readonly [number, number];
+  readonly noteRecords?: readonly NotePerformanceRecord[];
+  readonly beatProgress?: number;     // 0.0 to 1.0+ progress toward the strike moment of the active note
+  readonly preStartBeatProgress?: number; // 0.0 to 1.0 beat sweep on Note 1 before performance starts
+  readonly currentBeat?: number;      // 1..beatsPerMeasure
+  readonly lastMismatch: boolean;
 }
 
 export const StaffView: React.FC<StaffViewProps> = ({

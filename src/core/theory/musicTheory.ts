@@ -1,10 +1,12 @@
 import { ClefType, MusicalNote, NoteDuration, SolfegeStep } from '../models/music.types.ts';
 
-export const SOLFEGE_STEPS: SolfegeStep[] = ['Do', 'Ré', 'Mi', 'Fa', 'Sol', 'La', 'Si'];
+export const SOLFEGE_STEPS: readonly SolfegeStep[] = Object.freeze([
+  'Do', 'Ré', 'Mi', 'Fa', 'Sol', 'La', 'Si',
+]);
 
-export const CHROMATIC_SOLFEGE = [
-  'Do', 'Do#', 'Ré', 'Ré#', 'Mi', 'Fa', 'Fa#', 'Sol', 'Sol#', 'La', 'La#', 'Si'
-];
+export const CHROMATIC_SOLFEGE: readonly string[] = Object.freeze([
+  'Do', 'Do#', 'Ré', 'Ré#', 'Mi', 'Fa', 'Fa#', 'Sol', 'Sol#', 'La', 'La#', 'Si',
+]);
 
 /**
  * Calculates diatonic staff step relative to the middle line (Line 3).
@@ -17,7 +19,7 @@ export function getDiatonicStaffPosition(
   clef: ClefType
 ): number {
   const stepIndex = SOLFEGE_STEPS.indexOf(step);
-  const diatonicRank = octave * 7 + (stepIndex >= 0 ? stepIndex : 0);
+  const diatonicRank = octave * 7 + stepIndex;
 
   if (clef === 'treble') {
     // Si 4 is Line 3: 4 * 7 + 6 = 34
@@ -29,14 +31,14 @@ export function getDiatonicStaffPosition(
 }
 
 /**
- * Converts a frequency in Hz to MIDI number and Fixed-Do Solfège pitch representation.
+ * Converts a frequency in Hz to an immutable MIDI number and Fixed-Do Solfège representation.
  */
-export function frequencyToMidiAndSolfege(frequency: number): {
+export function frequencyToMidiAndSolfege(frequency: number): Readonly<{
   midi: number;
   solfegeName: string;
   octave: number;
   cents: number;
-} {
+}> {
   const midiFraction = 69 + 12 * Math.log2(frequency / 440);
   const midi = Math.round(midiFraction);
   const octave = Math.floor(midi / 12) - 1;
@@ -46,12 +48,12 @@ export function frequencyToMidiAndSolfege(frequency: number): {
   const idealFreq = 440 * Math.pow(2, (midi - 69) / 12);
   const cents = Math.round(1200 * Math.log2(frequency / idealFreq));
 
-  return {
+  return Object.freeze({
     midi,
     solfegeName,
     octave,
     cents,
-  };
+  });
 }
 
 /**
@@ -96,25 +98,27 @@ export function getNoteTargetDurationMs(duration: NoteDuration, tempoBpm: number
 }
 
 /**
- * Computes the note indices AFTER which a vertical measure bar line should be drawn,
- * given a sequence of notes and a time signature (e.g. [4, 4] or [3, 4]).
+ * Computes the immutable list of note indices AFTER which a vertical measure bar line
+ * should be drawn, given a sequence of notes and a time signature.
  * Excludes the final note index since the piece ends with a double bar line.
  */
 export function computeMeasureBarLineIndices(
-  notes: MusicalNote[],
-  timeSignature: [number, number] = [4, 4]
-): number[] {
-  const beatsPerMeasure = timeSignature[0] * (4 / timeSignature[1]);
+  notes: readonly MusicalNote[],
+  timeSignature: readonly [number, number] = [4, 4]
+): readonly number[] {
+  const beatsPerMeasure = (timeSignature[0] * 4) / timeSignature[1];
   const barIndices: number[] = [];
   let accumulatedBeats = 0;
 
   for (let i = 0; i < notes.length - 1; i++) {
-    accumulatedBeats += getNoteDurationBeats(notes[i].duration);
-    if (accumulatedBeats >= beatsPerMeasure - 1e-6) {
+    const nextBeats = accumulatedBeats + getNoteDurationBeats(notes[i].duration);
+    if (nextBeats >= beatsPerMeasure) {
       barIndices.push(i);
       accumulatedBeats = 0;
+    } else {
+      accumulatedBeats = nextBeats;
     }
   }
 
-  return barIndices;
+  return Object.freeze(barIndices);
 }

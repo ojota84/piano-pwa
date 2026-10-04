@@ -12,7 +12,9 @@ import {
 import { MusicalNote } from '../../src/core/models/music.types.ts';
 
 describe('MusicTheory Unit Tests (Core Theory & Rhythm)', () => {
-  it('should define exact Fixed-Do diatonic and chromatic solfège arrays', () => {
+  it('should define frozen Fixed-Do diatonic and chromatic solfège arrays', () => {
+    expect(Object.isFrozen(SOLFEGE_STEPS)).toBe(true);
+    expect(Object.isFrozen(CHROMATIC_SOLFEGE)).toBe(true);
     expect(SOLFEGE_STEPS).toEqual(['Do', 'Ré', 'Mi', 'Fa', 'Sol', 'La', 'Si']);
     expect(CHROMATIC_SOLFEGE).toEqual([
       'Do', 'Do#', 'Ré', 'Ré#', 'Mi', 'Fa', 'Fa#', 'Sol', 'Sol#', 'La', 'La#', 'Si',
@@ -40,8 +42,7 @@ describe('MusicTheory Unit Tests (Core Theory & Rhythm)', () => {
     expect(getDiatonicStaffPosition('Sol', 2, 'bass')).toBe(-4);
   });
 
-  it('should map all 12 chromatic pitches and cents deviations accurately', () => {
-    // Test all 12 chromatic semitones from MIDI 60 (Do 4) to MIDI 71 (Si 4)
+  it('should map all 12 chromatic pitches and cents deviations into frozen objects', () => {
     const expectedChromatics = [
       'Do', 'Do#', 'Ré', 'Ré#', 'Mi', 'Fa', 'Fa#', 'Sol', 'Sol#', 'La', 'La#', 'Si',
     ];
@@ -49,17 +50,17 @@ describe('MusicTheory Unit Tests (Core Theory & Rhythm)', () => {
       const midi = 60 + i;
       const freq = 440 * Math.pow(2, (midi - 69) / 12);
       const res = frequencyToMidiAndSolfege(freq);
+      expect(Object.isFrozen(res)).toBe(true);
       expect(res.midi).toBe(midi);
       expect(res.solfegeName).toBe(expectedChromatics[i]);
       expect(res.octave).toBe(4);
       expect(res.cents).toBe(0);
     }
 
-    // Test positive and negative cents offset around La 4 (440 Hz)
-    const sharpLa = 440 * Math.pow(2, 15 / 1200); // +15 cents
+    const sharpLa = 440 * Math.pow(2, 15 / 1200);
     expect(frequencyToMidiAndSolfege(sharpLa).cents).toBe(15);
 
-    const flatLa = 440 * Math.pow(2, -20 / 1200); // -20 cents
+    const flatLa = 440 * Math.pow(2, -20 / 1200);
     expect(frequencyToMidiAndSolfege(flatLa).cents).toBe(-20);
   });
 
@@ -76,7 +77,6 @@ describe('MusicTheory Unit Tests (Core Theory & Rhythm)', () => {
   });
 
   it('should calculate target ms and clamp tempo between 20 and 240 BPM', () => {
-    // At 60 BPM (1 beat = 1000ms)
     expect(getNoteTargetDurationMs('whole', 60)).toBe(4000);
     expect(getNoteTargetDurationMs('half', 60)).toBe(2000);
     expect(getNoteTargetDurationMs('quarter', 60)).toBe(1000);
@@ -91,7 +91,7 @@ describe('MusicTheory Unit Tests (Core Theory & Rhythm)', () => {
     expect(getNoteTargetDurationMs('quarter', 240)).toBe(250);
   });
 
-  it('should compute measure bar line indices accurately for 4/4, 3/4, and default time signatures', () => {
+  it('should compute frozen measure bar line indices for 4/4, 3/4, 6/8, and overflow measures', () => {
     const notes: MusicalNote[] = [
       { id: '1', solfegePitch: 'Do 4', midi: 60, step: 'Do', octave: 4, duration: 'quarter' },
       { id: '2', solfegePitch: 'Ré 4', midi: 62, step: 'Ré', octave: 4, duration: 'quarter' },
@@ -99,19 +99,29 @@ describe('MusicTheory Unit Tests (Core Theory & Rhythm)', () => {
       { id: '4', solfegePitch: 'Fa 4', midi: 65, step: 'Fa', octave: 4, duration: 'eighth' },
       { id: '5', solfegePitch: 'Sol 4', midi: 67, step: 'Sol', octave: 4, duration: 'eighth' },
       { id: '6', solfegePitch: 'La 4', midi: 69, step: 'La', octave: 4, duration: 'quarter' },
-      { id: '7', solfegePitch: 'Do 5', midi: 72, step: 'Do', octave: 5, duration: 'half' }, // Final note (excluded from bar lines)
+      { id: '7', solfegePitch: 'Do 5', midi: 72, step: 'Do', octave: 5, duration: 'half' }, // Final note (excluded)
     ];
 
-    expect(computeMeasureBarLineIndices(notes)).toEqual([2]);
+    const bars44 = computeMeasureBarLineIndices(notes);
+    expect(Object.isFrozen(bars44)).toBe(true);
+    expect(bars44).toEqual([2]);
     expect(computeMeasureBarLineIndices(notes, [4, 4])).toEqual([2]);
 
     const waltzNotes: MusicalNote[] = [
       { id: 'w1', solfegePitch: 'Do 4', midi: 60, step: 'Do', octave: 4, duration: 'half' },
       { id: 'w2', solfegePitch: 'Mi 4', midi: 64, step: 'Mi', octave: 4, duration: 'quarter' }, // 3 beats -> bar after index 1
-      { id: 'w3', solfegePitch: 'Sol 4', midi: 67, step: 'Sol', octave: 4, duration: 'quarter' },
+      { id: 'w3', solfegePitch: 'Sol 4', midi: 67, step: 'Sol', octave: 4, duration: 'whole' },   // 4 beats (> 3) -> bar after index 2
       { id: 'w4', solfegePitch: 'Do 5', midi: 72, step: 'Do', octave: 5, duration: 'half' },
     ];
-    expect(computeMeasureBarLineIndices(waltzNotes, [3, 4])).toEqual([1]);
+    expect(computeMeasureBarLineIndices(waltzNotes, [3, 4])).toEqual([1, 2]);
+
+    // 6/8 time signature: (6 * 4) / 8 = 3 quarter-note beats per measure
+    const sixEightNotes: MusicalNote[] = [
+      { id: 's1', solfegePitch: 'Do 4', midi: 60, step: 'Do', octave: 4, duration: 'quarter' },
+      { id: 's2', solfegePitch: 'Mi 4', midi: 64, step: 'Mi', octave: 4, duration: 'half' }, // 1 + 2 = 3 beats -> bar after index 1
+      { id: 's3', solfegePitch: 'Sol 4', midi: 67, step: 'Sol', octave: 4, duration: 'quarter' },
+    ];
+    expect(computeMeasureBarLineIndices(sixEightNotes, [6, 8])).toEqual([1]);
     expect(computeMeasureBarLineIndices([])).toEqual([]);
   });
 });

@@ -9,135 +9,156 @@ import { PracticeEngine } from './PracticeEngine.ts';
 export type ScreenMode = 'hub' | 'training';
 
 export interface SessionSnapshot {
-  runId: number;
-  activeScreen: ScreenMode;
-  selectedPiece: PartitionPiece;
-  currentIndex: number;
-  isCompleted: boolean;
-  hasPerformanceStarted: boolean;
-  lastMatchTimeMs: number;
-  expectedIntervalMs: number;
-  tempoBpm: number;
-  accuracy: number;
-  gradeSummary: LevelGradeSummary;
-  lastMismatch: boolean;
-  elapsedSeconds: number;
-  currentPitch: PitchResult | null;
-  justCompletedLevel: boolean;
+  readonly runId: number;
+  readonly activeScreen: ScreenMode;
+  readonly selectedPiece: PartitionPiece;
+  readonly currentIndex: number;
+  readonly isCompleted: boolean;
+  readonly hasPerformanceStarted: boolean;
+  readonly lastMatchTimeMs: number;
+  readonly expectedIntervalMs: number;
+  readonly tempoBpm: number;
+  readonly accuracy: number;
+  readonly gradeSummary: Readonly<LevelGradeSummary>;
+  readonly lastMismatch: boolean;
+  readonly elapsedSeconds: number;
+  readonly currentPitch: PitchResult | null;
+  readonly justCompletedLevel: boolean;
 }
 
+export interface CoordinatorState {
+  readonly runId: number;
+  readonly activeScreen: ScreenMode;
+  readonly selectedPiece: PartitionPiece;
+  readonly lastMismatch: boolean;
+  readonly currentPitch: PitchResult | null;
+  readonly justCompletedLevel: boolean;
+}
+
+const IGNORED_EVALUATION: Readonly<EvaluationResult> = Object.freeze({
+  status: 'IGNORED',
+});
+
 /**
- * Pure Domain Coordinator for the 2-Screen Practice Journey ('hub' <-> 'training').
- *
- * Eliminates UI closure bugs by maintaining authoritative state for the active screen,
- * selected partition level, runId counter (for clean Rejouer resets), and PracticeEngine lifecycle.
+ * Pure Domain Coordinator for the 2-Screen Practice Journey ('hub' <-> 'training'),
+ * backed by an immutable CoordinatorState.
  */
 export class TrainingSessionCoordinator {
   private readonly engine: PracticeEngine;
-  private runId = 1;
-  private activeScreen: ScreenMode = 'hub';
-  private selectedPiece: PartitionPiece;
-  private lastMismatch = false;
-  private currentPitch: PitchResult | null = null;
+  private state: Readonly<CoordinatorState>;
 
   constructor(initialPiece: PartitionPiece, engine: PracticeEngine = new PracticeEngine()) {
     this.engine = engine;
-    this.selectedPiece = initialPiece;
     this.engine.loadPartition(initialPiece);
+    this.state = Object.freeze({
+      runId: 1,
+      activeScreen: 'hub',
+      selectedPiece: initialPiece,
+      lastMismatch: false,
+      currentPitch: null,
+      justCompletedLevel: false,
+    });
   }
 
-  /**
-   * Transitions from the Curriculum Hub into the Focus Training View for the given level
-   * and resets the PracticeEngine for that partition.
-   */
-  public startLevel(level: PartitionPiece): SessionSnapshot {
-    this.runId++;
-    this.selectedPiece = level;
-    this.activeScreen = 'training';
-    this.lastMismatch = false;
+  public startLevel(level: PartitionPiece): Readonly<SessionSnapshot> {
     this.engine.loadPartition(level);
-    return this.getSnapshot(false);
+    this.state = Object.freeze({
+      ...this.state,
+      runId: this.state.runId + 1,
+      selectedPiece: level,
+      activeScreen: 'training',
+      lastMismatch: false,
+      justCompletedLevel: false,
+    });
+    return this.getSnapshot();
   }
 
-  /**
-   * Resets the current or specified partition while remaining in the current screen.
-   * Increments `runId` so UI timers, stopwatches, and rhythm progress bars reset cleanly.
-   */
-  public resetLevel(level: PartitionPiece = this.selectedPiece): SessionSnapshot {
-    this.runId++;
-    this.selectedPiece = level;
-    this.lastMismatch = false;
+  public resetLevel(level: PartitionPiece = this.state.selectedPiece): Readonly<SessionSnapshot> {
     this.engine.loadPartition(level);
-    return this.getSnapshot(false);
+    this.state = Object.freeze({
+      ...this.state,
+      runId: this.state.runId + 1,
+      selectedPiece: level,
+      lastMismatch: false,
+      justCompletedLevel: false,
+    });
+    return this.getSnapshot();
   }
 
-  /**
-   * Updates the active tempo (BPM) used for rhythm evaluation.
-   */
-  public setTempoBpm(bpm: number): SessionSnapshot {
+  public setTempoBpm(bpm: number): Readonly<SessionSnapshot> {
     this.engine.setTempoBpm(bpm);
-    return this.getSnapshot(false);
+    this.state = Object.freeze({
+      ...this.state,
+      justCompletedLevel: false,
+    });
+    return this.getSnapshot();
   }
 
-  /**
-   * Returns to the Curriculum Hub screen.
-   */
-  public backToHub(): SessionSnapshot {
-    this.activeScreen = 'hub';
-    this.lastMismatch = false;
-    return this.getSnapshot(false);
+  public backToHub(): Readonly<SessionSnapshot> {
+    this.state = Object.freeze({
+      ...this.state,
+      activeScreen: 'hub',
+      lastMismatch: false,
+      justCompletedLevel: false,
+    });
+    return this.getSnapshot();
   }
 
-  /**
-   * Processes a live microphone pitch detection frame.
-   * Always records `currentPitch` for the tuner display, and evaluates the note
-   * against PracticeEngine whenever `activeScreen === 'training'` and the level is not yet completed.
-   */
-  public handlePitchDetected(detected: PitchResult): {
-    evaluation: EvaluationResult;
-    snapshot: SessionSnapshot;
-  } {
-    this.currentPitch = detected;
-
-    if (this.activeScreen !== 'training' || this.engine.isCompleted()) {
-      return {
-        evaluation: { status: 'IGNORED' },
-        snapshot: this.getSnapshot(false),
-      };
+  public handlePitchDetected(detected: PitchResult): Readonly<{
+    evaluation: Readonly<EvaluationResult>;
+    snapshot: Readonly<SessionSnapshot>;
+  }> {
+    if (this.state.activeScreen !== 'training' || this.engine.isCompleted()) {
+      this.state = Object.freeze({
+        ...this.state,
+        currentPitch: detected,
+        justCompletedLevel: false,
+      });
+      return Object.freeze({
+        evaluation: IGNORED_EVALUATION,
+        snapshot: this.getSnapshot(),
+      });
     }
 
-    const wasCompleted = this.engine.isCompleted();
     const evaluation = this.engine.processDetectedPitch(detected.isPitched ? detected : null);
+    const nextMismatch =
+      evaluation.status === 'MISMATCH'
+        ? true
+        : evaluation.status === 'MATCH'
+        ? false
+        : this.state.lastMismatch;
 
-    if (evaluation.status === 'MATCH') {
-      this.lastMismatch = false;
-    } else if (evaluation.status === 'MISMATCH') {
-      this.lastMismatch = true;
-    }
+    this.state = Object.freeze({
+      ...this.state,
+      currentPitch: detected,
+      lastMismatch: nextMismatch,
+      justCompletedLevel: this.engine.isCompleted(),
+    });
 
-    const isNowCompleted = this.engine.isCompleted();
-    const justCompletedLevel = !wasCompleted && isNowCompleted;
-
-    return {
+    return Object.freeze({
       evaluation,
-      snapshot: this.getSnapshot(justCompletedLevel),
-    };
+      snapshot: this.getSnapshot(),
+    });
   }
 
-  public clearPitch(): SessionSnapshot {
-    this.currentPitch = null;
-    return this.getSnapshot(false);
+  public clearPitch(): Readonly<SessionSnapshot> {
+    this.state = Object.freeze({
+      ...this.state,
+      currentPitch: null,
+      justCompletedLevel: false,
+    });
+    return this.getSnapshot();
   }
 
   public getEngine(): PracticeEngine {
     return this.engine;
   }
 
-  public getSnapshot(justCompletedLevel = false): SessionSnapshot {
-    return {
-      runId: this.runId,
-      activeScreen: this.activeScreen,
-      selectedPiece: this.selectedPiece,
+  public getSnapshot(): Readonly<SessionSnapshot> {
+    return Object.freeze({
+      runId: this.state.runId,
+      activeScreen: this.state.activeScreen,
+      selectedPiece: this.state.selectedPiece,
       currentIndex: this.engine.getCurrentIndex(),
       isCompleted: this.engine.isCompleted(),
       hasPerformanceStarted: this.engine.hasPerformanceStarted(),
@@ -146,10 +167,10 @@ export class TrainingSessionCoordinator {
       tempoBpm: this.engine.getTempoBpm(),
       accuracy: this.engine.getAccuracyPercentage(),
       gradeSummary: this.engine.getGradeSummary(),
-      lastMismatch: this.lastMismatch,
+      lastMismatch: this.state.lastMismatch,
       elapsedSeconds: this.engine.getElapsedTimeSeconds(),
-      currentPitch: this.currentPitch,
-      justCompletedLevel,
-    };
+      currentPitch: this.state.currentPitch,
+      justCompletedLevel: this.state.justCompletedLevel,
+    });
   }
 }

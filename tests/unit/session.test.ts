@@ -3,7 +3,7 @@ import { TrainingSessionCoordinator } from '../../src/core/engine/TrainingSessio
 import { PartitionPiece } from '../../src/core/models/music.types.ts';
 import { PitchResult } from '../../src/core/models/pitch.types.ts';
 
-describe('TrainingSessionCoordinator Unit Tests (Hub <-> Training & Live Pitch Evaluation)', () => {
+describe('TrainingSessionCoordinator Unit Tests (Hub <-> Training & Immutability)', () => {
   let level1Treble: PartitionPiece;
   let level5BassDo3: PartitionPiece;
   let coordinator: TrainingSessionCoordinator;
@@ -77,14 +77,19 @@ describe('TrainingSessionCoordinator Unit Tests (Hub <-> Training & Live Pitch E
     vi.useRealTimers();
   });
 
-  it('should start on the hub screen and ignore note scoring until a training level is entered', () => {
+  it('should start on the hub screen with frozen snapshots and ignore note scoring until training starts', () => {
     const initial = coordinator.getSnapshot();
+    expect(Object.isFrozen(initial)).toBe(true);
     expect(initial.activeScreen).toBe('hub');
     expect(initial.currentIndex).toBe(0);
+    expect(initial.lastMismatch).toBe(false);
     expect(initial.justCompletedLevel).toBe(false);
+    expect(coordinator.getEngine().getPartition()?.id).toBe('level-1-landmarks-treble');
 
     // Microphone hears Do 3 while still on Hub
     const result = coordinator.handlePitchDetected(do3Pitch);
+    expect(Object.isFrozen(result)).toBe(true);
+    expect(Object.isFrozen(result.evaluation)).toBe(true);
     expect(result.evaluation.status).toBe('IGNORED');
     expect(result.snapshot.currentPitch?.solfegeName).toBe('Do');
     expect(result.snapshot.currentPitch?.octave).toBe(3);
@@ -93,9 +98,17 @@ describe('TrainingSessionCoordinator Unit Tests (Hub <-> Training & Live Pitch E
 
     // Supports returning to hub, clearing pitch, and setting tempo BPM
     const startSnap = coordinator.startLevel(level5BassDo3);
+    expect(startSnap.runId).toBe(initial.runId + 1);
     expect(startSnap.justCompletedLevel).toBe(false);
+    expect(startSnap.lastMismatch).toBe(false);
+
     coordinator.handlePitchDetected(fa3Pitch); // trigger mismatch first
     expect(coordinator.getSnapshot().lastMismatch).toBe(true);
+
+    // Unpitched frame while in mismatch preserves lastMismatch=true
+    const unpitchedResult = coordinator.handlePitchDetected({ ...do3Pitch, isPitched: false });
+    expect(unpitchedResult.evaluation.status).toBe('IGNORED');
+    expect(unpitchedResult.snapshot.lastMismatch).toBe(true);
 
     const tempoSnap = coordinator.setTempoBpm(95);
     expect(tempoSnap.tempoBpm).toBe(95);
@@ -113,7 +126,7 @@ describe('TrainingSessionCoordinator Unit Tests (Hub <-> Training & Live Pitch E
     expect(hubSnap.justCompletedLevel).toBe(false);
   });
 
-  it('should immediately evaluate Do 3 and advance pentagram when entering a training level from the Hub (regression test)', () => {
+  it('should immediately evaluate Do 3 and advance pentagram when entering a training level from the Hub', () => {
     const afterStart = coordinator.startLevel(level5BassDo3);
     expect(afterStart.activeScreen).toBe('training');
     expect(afterStart.selectedPiece.id).toBe('level-5-bass-f3-c3');
@@ -123,14 +136,16 @@ describe('TrainingSessionCoordinator Unit Tests (Hub <-> Training & Live Pitch E
     expect(frame1.snapshot.currentPitch?.solfegeName).toBe('Do');
     expect(frame1.snapshot.currentPitch?.octave).toBe(3);
     expect(frame1.evaluation.status).toBe('IGNORED');
+    expect(frame1.snapshot.justCompletedLevel).toBe(false);
 
     const frame2 = coordinator.handlePitchDetected(do3Pitch);
     expect(frame2.evaluation.status).toBe('MATCH');
     expect(frame2.snapshot.currentIndex).toBe(1);
     expect(frame2.snapshot.lastMismatch).toBe(false);
+    expect(frame2.snapshot.justCompletedLevel).toBe(false);
   });
 
-  it('should flag wrong note as MISMATCH (red pentagram state) when playing Fa 3 instead of target Do 3 in training', () => {
+  it('should flag wrong note as MISMATCH and clear it on startLevel or resetLevel', () => {
     coordinator.startLevel(level5BassDo3);
 
     const wrongAttempt = coordinator.handlePitchDetected(fa3Pitch);
@@ -138,6 +153,14 @@ describe('TrainingSessionCoordinator Unit Tests (Hub <-> Training & Live Pitch E
     expect(wrongAttempt.snapshot.lastMismatch).toBe(true);
     expect(wrongAttempt.snapshot.currentIndex).toBe(0);
     expect(wrongAttempt.snapshot.accuracy).toBe(0);
+
+    const afterReset = coordinator.resetLevel();
+    expect(afterReset.lastMismatch).toBe(false);
+
+    coordinator.handlePitchDetected(fa3Pitch);
+    expect(coordinator.getSnapshot().lastMismatch).toBe(true);
+    const afterStartAgain = coordinator.startLevel(level5BassDo3);
+    expect(afterStartAgain.lastMismatch).toBe(false);
   });
 
   it('should clear red mismatch state as soon as the correct target note Do 3 is matched', () => {
@@ -153,7 +176,7 @@ describe('TrainingSessionCoordinator Unit Tests (Hub <-> Training & Live Pitch E
     expect(matched.snapshot.currentIndex).toBe(1);
   });
 
-  it('should mark justCompletedLevel=true when the final note of a training level is matched', () => {
+  it('should mark justCompletedLevel=true when the final note is matched and false on subsequent frames', () => {
     coordinator.startLevel(level5BassDo3);
 
     // Match Note 1: Do 3
@@ -161,7 +184,6 @@ describe('TrainingSessionCoordinator Unit Tests (Hub <-> Training & Live Pitch E
     coordinator.handlePitchDetected(do3Pitch);
     expect(coordinator.getSnapshot().currentIndex).toBe(1);
 
-    // Advance past 500ms refractory lockout
     vi.advanceTimersByTime(530);
 
     // Match Note 2: Fa 3
@@ -170,6 +192,11 @@ describe('TrainingSessionCoordinator Unit Tests (Hub <-> Training & Live Pitch E
     expect(finalFrame.evaluation.status).toBe('MATCH');
     expect(finalFrame.snapshot.isCompleted).toBe(true);
     expect(finalFrame.snapshot.justCompletedLevel).toBe(true);
+
+    // Subsequent pitch after level is already completed returns IGNORED and justCompletedLevel=false
+    const postCompleteFrame = coordinator.handlePitchDetected(fa3Pitch);
+    expect(postCompleteFrame.evaluation.status).toBe('IGNORED');
+    expect(postCompleteFrame.snapshot.justCompletedLevel).toBe(false);
   });
 
   it('should cleanly reset stopwatch and increment runId when Rejouer (resetLevel) is triggered', () => {
@@ -177,20 +204,18 @@ describe('TrainingSessionCoordinator Unit Tests (Hub <-> Training & Live Pitch E
     const initialRunId = startSnap.runId;
     expect(startSnap.hasPerformanceStarted).toBe(false);
 
-    // Play 1st note (Do 3) -> starts stopwatch & performance evaluation
     coordinator.handlePitchDetected(do3Pitch);
     const afterNote1 = coordinator.handlePitchDetected(do3Pitch);
     expect(afterNote1.snapshot.hasPerformanceStarted).toBe(true);
     expect(afterNote1.snapshot.lastMatchTimeMs).toBeGreaterThan(0);
 
-    // Click Rejouer (resetLevel)
     const afterRejouer = coordinator.resetLevel();
     expect(afterRejouer.runId).toBe(initialRunId + 1);
     expect(afterRejouer.hasPerformanceStarted).toBe(false);
     expect(afterRejouer.currentIndex).toBe(0);
     expect(afterRejouer.elapsedSeconds).toBe(0);
+    expect(afterRejouer.justCompletedLevel).toBe(false);
 
-    // Play 1st note again on the replayed run -> stopwatch starts fresh!
     coordinator.handlePitchDetected(do3Pitch);
     const replayNote1 = coordinator.handlePitchDetected(do3Pitch);
     expect(replayNote1.snapshot.hasPerformanceStarted).toBe(true);

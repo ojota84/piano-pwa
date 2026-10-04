@@ -11,32 +11,32 @@ export type DifficultyLevel = 'Débutant' | 'Intermédiaire' | 'Avancé';
 export type LessonMode = 'lecture' | 'rythme';
 
 export interface MusicalNote {
-  id: string;
-  solfegePitch: string; // e.g. "Do 4", "La 3", "Do 6"
-  midi: number;          // 60 = Do 4, 57 = La 3, 84 = Do 6
-  step: SolfegeStep;
-  octave: number;
-  accidental?: '#' | 'b' | 'n';
-  duration: NoteDuration;
-  finger?: number;       // 1 = thumb, 5 = pinky
+  readonly id: string;
+  readonly solfegePitch: string; // e.g. "Do 4", "La 3", "Do 6"
+  readonly midi: number;         // 60 = Do 4, 57 = La 3, 84 = Do 6
+  readonly step: SolfegeStep;
+  readonly octave: number;
+  readonly accidental?: '#' | 'b' | 'n';
+  readonly duration: NoteDuration;
+  readonly finger?: number;      // 1 = thumb, 5 = pinky
 }
 
 export interface PartitionPiece {
-  id: string;
-  category: TrainingCategory;
-  mode?: LessonMode;     // 'lecture' (notes only) or 'rythme' (notes + tempo timing)
-  levelNumber: number;
-  title: string;
-  subtitle?: string;
-  composer?: string;
-  difficulty: DifficultyLevel;
-  rangeLabel?: string; // e.g. "La 3 – Do 6"
-  clef: ClefType;
-  keySignature: string; // 'Do', 'Sol', 'Fa'
-  timeSignature: [number, number]; // [4, 4]
-  tempo: number; // BPM
-  description: string;
-  notes: MusicalNote[];
-  learningFocus: string;
-  estimatedMinutes?: number;
+  readonly id: string;
+  readonly category: TrainingCategory;
+  readonly mode?: LessonMode;    // 'lecture' (notes only) or 'rythme' (notes + tempo timing)
+  readonly levelNumber: number;
+  readonly title: string;
+  readonly subtitle?: string;
+  readonly composer?: string;
+  readonly difficulty: DifficultyLevel;
+  readonly rangeLabel?: string;  // e.g. "La 3 – Do 6"
+  readonly clef: ClefType;
+  readonly keySignature: string; // 'Do', 'Sol', 'Fa'
+  readonly timeSignature: readonly [number, number]; // [4, 4]
+  readonly tempo: number;        // BPM
+  readonly description: string;
+  readonly notes: readonly MusicalNote[];
+  readonly learningFocus: string;
+  readonly estimatedMinutes?: number;
 }
