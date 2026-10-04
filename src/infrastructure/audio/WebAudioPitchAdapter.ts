@@ -13,9 +13,9 @@ export class WebAudioPitchAdapter implements AudioPitchPort {
   private animFrameId: number | null = null;
   private onPitchCallback: ((pitch: PitchResult) => void) | null = null;
 
-  // Piano frequency range: C2 (~65.4Hz) to C6 (~1046.5Hz)
+  // Piano frequency range: C2 (~65.4Hz) to C6 (~1046.5Hz) with headroom
   private readonly minFreq = 62;
-  private readonly maxFreq = 1080;
+  private readonly maxFreq = 1150;
 
   // Balanced RMS silence threshold & solid digital preamp gain
   private silenceThresholdRms = 0.0018;
@@ -241,16 +241,45 @@ export class WebAudioPitchAdapter implements AudioPitchPort {
       };
     }
 
-    // 3. Find the FIRST local peak whose correlation is >= peakThreshold.
-    // The first peak corresponds strictly to fundamental period T0.
-    const peakThreshold = Math.max(0.38, maxOverallCorr * 0.75);
+    // 3. Find the fundamental period T0 using McLeod First Prominent Peak with harmonic/subharmonic verification:
+    // - Wait for correlation to descend from lag 0 (or cross below peakThreshold)
+    // - Pick the first local peak >= max(0.38, 0.62 * maxOverallCorr) so Do 4 is never skipped in favor of subharmonic Do 3
+    // - Verify it is not a 2nd-harmonic half-period peak (where corr[2*lag] is significantly higher than corr[lag])
+    const peakThreshold = Math.max(0.38, maxOverallCorr * 0.62);
     let bestLag = -1;
+    let hasDescended = false;
 
     for (let lag = minLag + 1; lag < maxLag; lag++) {
+      if (corr[lag] < corr[lag - 1]) {
+        hasDescended = true;
+      }
+      if (!hasDescended && corr[lag] > corr[minLag]) {
+        continue;
+      }
+
       if (corr[lag] >= peakThreshold) {
         if (corr[lag] >= corr[lag - 1] && corr[lag] >= corr[lag + 1]) {
+          // Check if 2*lag (one octave lower) has a much stronger correlation peak,
+          // which happens only when `lag` is the 2nd harmonic (T0/2) of a true fundamental at `2*lag`
+          const doubleLagCenter = lag * 2;
+          let maxDoubleCorr = -1;
+          if (doubleLagCenter <= maxLag) {
+            const searchStart = Math.max(minLag, doubleLagCenter - 3);
+            const searchEnd = Math.min(maxLag, doubleLagCenter + 3);
+            for (let dLag = searchStart; dLag <= searchEnd; dLag++) {
+              if (corr[dLag] > maxDoubleCorr) {
+                maxDoubleCorr = corr[dLag];
+              }
+            }
+          }
+
+          if (maxDoubleCorr - corr[lag] > 0.14) {
+            // `lag` is a 2nd harmonic overtone; continue to true fundamental at 2*lag
+            continue;
+          }
+
           bestLag = lag;
-          break; // Stop at FIRST peak: this is T0!
+          break; // Stop at true fundamental T0!
         }
       }
     }

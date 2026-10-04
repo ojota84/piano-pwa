@@ -17,19 +17,20 @@ export const StaffView: React.FC<StaffViewProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // 5 Staff Lines:
-  // Line 5 (Top): y = 50
-  // Line 4: y = 70
-  // Line 3 (Middle): y = 90 (staffPosition = 0)
-  // Line 2: y = 110
-  // Line 1 (Bottom): y = 130
-  const staffLineY = [50, 70, 90, 110, 130];
+  // 5 Staff Lines centered at y = 120 to accommodate wide spans (La 3 to Do 6):
+  // Line 5 (Top): y = 80 (staffPos = +4)
+  // Line 4: y = 100 (staffPos = +2)
+  // Line 3 (Middle): y = 120 (staffPos = 0)
+  // Line 2: y = 140 (staffPos = -2)
+  // Line 1 (Bottom): y = 160 (staffPos = -4)
+  const centerY = 120;
+  const staffLineY = [80, 100, 120, 140, 160];
   const stepHeight = 10; // 10px per diatonic step
 
   const startX = 135;
   const noteSpacing = 72;
   const svgWidth = Math.max(540, startX + notes.length * noteSpacing + 60);
-  const svgHeight = 220;
+  const svgHeight = 260;
 
   // Auto-center the partition viewport around the active note being played
   useEffect(() => {
@@ -72,7 +73,7 @@ export const StaffView: React.FC<StaffViewProps> = ({
       >
         <svg
           viewBox={`0 0 ${svgWidth} ${svgHeight}`}
-          className="w-full h-48 sm:h-52"
+          className="w-full h-56 sm:h-60"
           style={{ minWidth: `${svgWidth}px` }}
         >
           <rect x="0" y="0" width={svgWidth} height={svgHeight} fill="#ffffff" />
@@ -92,45 +93,41 @@ export const StaffView: React.FC<StaffViewProps> = ({
           ))}
 
           {/* Start Bar Line & Final Double Bar Line */}
-          <line x1="20" y1="50" x2="20" y2="130" stroke="#0f172a" strokeWidth="2.5" />
-          <line x1={svgWidth - 25} y1="50" x2={svgWidth - 25} y2="130" stroke="#0f172a" strokeWidth="1.5" />
-          <line x1={svgWidth - 20} y1="50" x2={svgWidth - 20} y2="130" stroke="#0f172a" strokeWidth="3.5" />
+          <line x1="20" y1="80" x2="20" y2="160" stroke="#0f172a" strokeWidth="2.5" />
+          <line x1={svgWidth - 25} y1="80" x2={svgWidth - 25} y2="160" stroke="#0f172a" strokeWidth="1.5" />
+          <line x1={svgWidth - 20} y1="80" x2={svgWidth - 20} y2="160" stroke="#0f172a" strokeWidth="3.5" />
 
           {/* Clef Glyphs */}
           {clef === 'treble' ? (
-            <g>
-              <text
-                x="32"
-                y="126"
-                fontFamily="serif"
-                fontSize="84"
-                fill="#0f172a"
-                className="select-none"
-              >
-                𝄞
-              </text>
-            </g>
+            <text
+              x="32"
+              y="156"
+              fontFamily="serif"
+              fontSize="84"
+              fill="#0f172a"
+              className="select-none"
+            >
+              𝄞
+            </text>
           ) : (
-            <g>
-              <text
-                x="30"
-                y="112"
-                fontFamily="serif"
-                fontSize="66"
-                fill="#0f172a"
-                className="select-none"
-              >
-                𝄢
-              </text>
-            </g>
+            <text
+              x="30"
+              y="142"
+              fontFamily="serif"
+              fontSize="66"
+              fill="#0f172a"
+              className="select-none"
+            >
+              𝄢
+            </text>
           )}
 
           {/* Time Signature 4/4 */}
           <g transform="translate(95, 0)">
-            <text x="0" y="85" fontSize="28" fontFamily="serif" fontWeight="700" fill="#0f172a" textAnchor="middle">
+            <text x="0" y="115" fontSize="28" fontFamily="serif" fontWeight="700" fill="#0f172a" textAnchor="middle">
               4
             </text>
-            <text x="0" y="125" fontSize="28" fontFamily="serif" fontWeight="700" fill="#0f172a" textAnchor="middle">
+            <text x="0" y="155" fontSize="28" fontFamily="serif" fontWeight="700" fill="#0f172a" textAnchor="middle">
               4
             </text>
           </g>
@@ -139,7 +136,7 @@ export const StaffView: React.FC<StaffViewProps> = ({
           {notes.map((note, index) => {
             const staffPos = getDiatonicStaffPosition(note.step, note.octave, clef);
             const x = startX + index * noteSpacing;
-            const y = 90 - staffPos * stepHeight;
+            const y = centerY - staffPos * stepHeight;
 
             const isTarget = index === currentIndex;
             const isCompleted = index < currentIndex;
@@ -147,20 +144,14 @@ export const StaffView: React.FC<StaffViewProps> = ({
             const ledgerLinesBelow: number[] = [];
             if (staffPos <= -6) {
               for (let p = -6; p >= staffPos; p -= 2) {
-                ledgerLinesBelow.push(90 - p * stepHeight);
-              }
-              if (staffPos % 2 !== 0 && !ledgerLinesBelow.includes(90 - (staffPos + 1) * stepHeight)) {
-                ledgerLinesBelow.push(90 - (staffPos + 1) * stepHeight);
+                ledgerLinesBelow.push(centerY - p * stepHeight);
               }
             }
 
             const ledgerLinesAbove: number[] = [];
             if (staffPos >= 6) {
               for (let p = 6; p <= staffPos; p += 2) {
-                ledgerLinesAbove.push(90 - p * stepHeight);
-              }
-              if (staffPos % 2 !== 0 && !ledgerLinesAbove.includes(90 - (staffPos - 1) * stepHeight)) {
-                ledgerLinesAbove.push(90 - (staffPos - 1) * stepHeight);
+                ledgerLinesAbove.push(centerY - p * stepHeight);
               }
             }
 
@@ -186,9 +177,9 @@ export const StaffView: React.FC<StaffViewProps> = ({
               );
             }
 
-            const stemUp = y > 90;
+            const stemUp = y > centerY;
             const stemX = stemUp ? x + 9.5 : x - 9.5;
-            const stemY2 = stemUp ? y - 46 : y + 46;
+            const stemY2 = stemUp ? y - 44 : y + 44;
 
             return (
               <g key={note.id}>
@@ -243,7 +234,7 @@ export const StaffView: React.FC<StaffViewProps> = ({
                 {/* Solfège Pitch Label */}
                 <text
                   x={x}
-                  y={192}
+                  y={242}
                   textAnchor="middle"
                   fontSize={isTarget ? '15' : '13'}
                   fontWeight={isTarget ? '700' : '500'}
@@ -257,7 +248,7 @@ export const StaffView: React.FC<StaffViewProps> = ({
                 {note.finger && (
                   <text
                     x={x}
-                    y={28}
+                    y={20}
                     textAnchor="middle"
                     fontSize="11"
                     fontWeight="600"

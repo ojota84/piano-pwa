@@ -112,6 +112,42 @@ describe('Acoustic DSP Pitch Extraction Tests', () => {
     expect(Math.abs(result.frequency - 523.25)).toBeLessThan(3);
   });
 
+  it('should accurately detect Do 4 (261.63 Hz) without octave-dropping to Do 3 even with decaying envelope and strong overtones', () => {
+    const buffer = new Float32Array(bufferSize);
+    const fundFreq = 261.63; // Do 4
+    for (let i = 0; i < bufferSize; i++) {
+      const decay = Math.exp(-i / 1200);
+      buffer[i] =
+        decay *
+        (0.35 * Math.sin((2 * Math.PI * fundFreq * i) / sampleRate) +
+          0.45 * Math.sin((2 * Math.PI * 2 * fundFreq * i) / sampleRate) +
+          0.2 * Math.sin((2 * Math.PI * 3 * fundFreq * i) / sampleRate) +
+          0.12 * Math.sin((2 * Math.PI * (fundFreq / 2) * i) / sampleRate));
+    }
+    const result = adapter.detectPitch(buffer, sampleRate, 'running');
+
+    expect(result.isPitched).toBe(true);
+    expect(result.solfegeName).toBe('Do');
+    expect(result.octave).toBe(4);
+    expect(result.midi).toBe(60);
+  });
+
+  it('should detect La 3 (220 Hz, MIDI 57) and Do 6 (1046.5 Hz, MIDI 84) at the extremes of the advanced Clé de Sol span', () => {
+    const la3Buffer = generatePianoHarmonicTone(220.0);
+    const la3Result = adapter.detectPitch(la3Buffer, sampleRate, 'running');
+    expect(la3Result.isPitched).toBe(true);
+    expect(la3Result.solfegeName).toBe('La');
+    expect(la3Result.octave).toBe(3);
+    expect(la3Result.midi).toBe(57);
+
+    const do6Buffer = generateSineWave(1046.5);
+    const do6Result = adapter.detectPitch(do6Buffer, sampleRate, 'running');
+    expect(do6Result.isPitched).toBe(true);
+    expect(do6Result.solfegeName).toBe('Do');
+    expect(do6Result.octave).toBe(6);
+    expect(do6Result.midi).toBe(84);
+  });
+
   it('should reject pure silence as unpitched', () => {
     const silence = new Float32Array(bufferSize);
     const result = adapter.detectPitch(silence, sampleRate, 'running');

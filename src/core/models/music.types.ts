@@ -6,10 +6,12 @@ export type SolfegeStep = 'Do' | 'Ré' | 'Mi' | 'Fa' | 'Sol' | 'La' | 'Si';
 
 export type TrainingCategory = 'landmarks' | 'bass_clef' | 'intervals' | 'repertoire';
 
+export type DifficultyLevel = 'Débutant' | 'Intermédiaire' | 'Avancé';
+
 export interface MusicalNote {
   id: string;
-  solfegePitch: string; // e.g. "Do 4", "Ré 4", "Mi 4"
-  midi: number;          // 60 = Do 4
+  solfegePitch: string; // e.g. "Do 4", "La 3", "Do 6"
+  midi: number;          // 60 = Do 4, 57 = La 3, 84 = Do 6
   step: SolfegeStep;
   octave: number;
   accidental?: '#' | 'b' | 'n';
@@ -24,7 +26,8 @@ export interface PartitionPiece {
   title: string;
   subtitle?: string;
   composer?: string;
-  difficulty: 'Débutant' | 'Élémentaire' | 'Intermédiaire';
+  difficulty: DifficultyLevel;
+  rangeLabel?: string; // e.g. "La 3 – Do 6"
   clef: ClefType;
   keySignature: string; // 'Do', 'Sol', 'Fa'
   timeSignature: [number, number]; // [4, 4]
