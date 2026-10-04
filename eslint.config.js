@@ -7,6 +7,7 @@ export default tseslint.config(
   {
     ignores: [
       'dist/**',
+      'dev-dist/**',
       'node_modules/**',
       '.stryker-tmp/**',
       'reports/**',
