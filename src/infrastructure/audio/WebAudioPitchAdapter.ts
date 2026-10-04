@@ -15,7 +15,7 @@ export class WebAudioPitchAdapter implements AudioPitchPort {
 
   // Piano frequency range: C2 (~65.4Hz) to C6 (~1046.5Hz) with headroom
   private readonly minFreq = 62;
-  private readonly maxFreq = 1150;
+  private readonly maxFreq = 1250;
 
   // Balanced RMS silence threshold & solid digital preamp gain
   private silenceThresholdRms = 0.0018;
@@ -247,16 +247,8 @@ export class WebAudioPitchAdapter implements AudioPitchPort {
     // - Verify it is not a 2nd-harmonic half-period peak (where corr[2*lag] is significantly higher than corr[lag])
     const peakThreshold = Math.max(0.38, maxOverallCorr * 0.62);
     let bestLag = -1;
-    let hasDescended = false;
 
     for (let lag = minLag + 1; lag < maxLag; lag++) {
-      if (corr[lag] < corr[lag - 1]) {
-        hasDescended = true;
-      }
-      if (!hasDescended && corr[lag] > corr[minLag]) {
-        continue;
-      }
-
       if (corr[lag] >= peakThreshold) {
         if (corr[lag] >= corr[lag - 1] && corr[lag] >= corr[lag + 1]) {
           // Check if 2*lag (one octave lower) has a much stronger correlation peak,
