@@ -18,3 +18,11 @@ Each `NoteDuration` (`whole`, `half`, `quarter`, `eighth`) MUST map to its exact
 * **GIVEN** a 4/4 sequence of notes `[quarter, quarter, half, quarter, quarter, half]`
 * **WHEN** `computeMeasureBarLineIndices(notes, [4, 4])` is executed
 * **THEN** it MUST return a frozen array `[2]` (bar line after index 2, excluding the final note).
+
+## Requirement: Hands-Free Viewport Auto-Centering Around the Visually Focused Note
+Because the learner's hands are on the piano keyboard, `StaffView` MUST automatically scroll horizontally to keep the visually focused note (`visualFocusIndex`: `currentIndex - 1` while holding a note in Rhythm mode, or `currentIndex` when ready to strike) centered in the viewport.
+
+### Scenario: Smooth Horizontal Scroll on Note Progression
+* **GIVEN** a multi-measure partition wider than the mobile screen viewport
+* **WHEN** `visualFocusIndex` transitions from a held note (`currentIndex - 1`) to the next strike target (`currentIndex`)
+* **THEN** the staff container MUST smoothly center `visualFocusIndex` horizontally without requiring manual touch scrolling.

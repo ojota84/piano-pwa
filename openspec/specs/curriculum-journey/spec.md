@@ -26,3 +26,11 @@ The partition repository (`src/infrastructure/data/InMemoryPartitionRepository.t
 * **AND** `snapshot.hasPerformanceStarted` MUST be `false`
 * **AND** `snapshot.currentIndex` MUST be `0`
 * **AND** `snapshot.elapsedSeconds` MUST be `0`.
+
+## Requirement: End-of-Level Grading Banner & Hands-Free Next-Level Progression
+When the final note of a level is matched (`isCompleted === true`), `FocusTrainingView` MUST display a non-blocking summary banner with per-note pitch and rhythm diagnostics, a `Rejouer` action, and a `Niveau suivant` action that can also be triggered by pressing `Enter`.
+
+### Scenario: Completing a Level and Advancing to the Next Level
+* **GIVEN** `isCompleted === true` and a valid `nextLevel` in sequence
+* **WHEN** the learner clicks `Niveau suivant` or presses `Enter`
+* **THEN** `resetLevel(nextLevel)` MUST initialize the next partition at `currentIndex === 0` with `hasPerformanceStarted === false` and `elapsedSeconds === 0`.
