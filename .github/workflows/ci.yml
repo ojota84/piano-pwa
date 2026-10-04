@@ -7,10 +7,9 @@ on:
     branches: [main]
 
 jobs:
-  build-and-test:
-    name: Build, Lint & Mutation Test
+  typecheck:
+    name: Typecheck (tsc)
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -24,14 +23,82 @@ jobs:
       - name: Install dependencies
         run: npm ci --legacy-peer-deps || npm install --legacy-peer-deps
 
-      - name: Validate Typecheck & ESLint (npm run validate)
-        run: npm run validate
+      - name: Run TypeScript Typecheck (tsc --noEmit)
+        run: npm run typecheck
 
-      - name: Run unit & architecture tests (Vitest)
+  lint:
+    name: Lint (ESLint)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps || npm install --legacy-peer-deps
+
+      - name: Run ESLint (eslint .)
+        run: npm run lint
+
+  unit-tests:
+    name: Unit & Architecture Tests (Vitest)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps || npm install --legacy-peer-deps
+
+      - name: Run Vitest unit & architecture tests
         run: npm test
 
-      - name: Run mutation testing (Stryker)
+  mutation-tests:
+    name: Mutation Testing (Stryker)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps || npm install --legacy-peer-deps
+
+      - name: Run Stryker mutation testing
         run: npm run test:mutation
 
-      - name: Build production bundle (Vite)
+  build:
+    name: Production Build (Vite)
+    runs-on: ubuntu-latest
+    needs: [typecheck, lint, unit-tests, mutation-tests]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps || npm install --legacy-peer-deps
+
+      - name: Build production bundle
         run: npm run build
