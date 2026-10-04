@@ -33,9 +33,11 @@ export class WebAudioPitchAdapter implements AudioPitchPort {
   }
 
   public async start(onPitch: (pitch: PitchResult) => void): Promise<void> {
-    if (this.isRunning) return;
-
     this.onPitchCallback = onPitch;
+    if (this.isRunning) {
+      await this.resumeAudio();
+      return;
+    }
 
     const AudioContextClass =
       window.AudioContext ||

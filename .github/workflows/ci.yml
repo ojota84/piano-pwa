@@ -24,7 +24,7 @@ jobs:
       - name: Install dependencies
         run: npm ci --legacy-peer-deps || npm install --legacy-peer-deps
 
-      - name: Type check (TypeScript)
+      - name: Lint & Typecheck codebase (npm run lint)
         run: npm run lint
 
       - name: Run unit & architecture tests (Vitest)
