@@ -14,9 +14,7 @@ export interface StaffViewProps {
   readonly mode?: LessonMode;
   readonly timeSignature?: readonly [number, number];
   readonly noteRecords?: readonly NotePerformanceRecord[];
-  readonly beatProgress?: number;     // 0.0 to 1.0+ progress toward the strike moment of the active note
-  readonly preStartBeatProgress?: number; // 0.0 to 1.0 beat sweep on Note 1 before performance starts
-  readonly currentBeat?: number;      // 1..beatsPerMeasure
+  readonly beatProgress?: number; // 0.0 to 1.0+ hold progress of the note just played (notes[currentIndex - 1])
   readonly lastMismatch: boolean;
 }
 
@@ -48,36 +46,24 @@ function computeLedgerLineYs(staffPos: number): Readonly<{
 }
 
 /**
- * Pure helper computing the rhythm action cue displayed above the active notehead.
+ * Pure helper computing the Hold Clock label shown on the note currently being held.
  */
-function resolveRhythmCueText(
-  isRhythmMode: boolean,
-  currentIndex: number,
-  inStrikeZone: boolean,
-  isLate: boolean,
-  currentBeat: number,
-  clampedProgress: number,
-  previousNote?: MusicalNote
+function resolveHoldCueText(
+  note: MusicalNote,
+  clampedHoldProgress: number
 ): string {
-  if (!isRhythmMode) return '';
-
-  if (currentIndex === 0) {
-    return inStrikeZone ? `● Temps ${currentBeat}` : `Temps ${currentBeat}`;
-  }
-
-  if (inStrikeZone) return 'JOUEZ !';
-  if (isLate) return 'Trop tard';
-
-  const prevBeats = previousNote ? getNoteDurationBeats(previousNote.duration) : 1;
-  if (prevBeats >= 2) {
+  const beats = getNoteDurationBeats(note.duration);
+  if (beats >= 2) {
     const currentHoldBeat = Math.min(
-      prevBeats,
-      Math.floor(clampedProgress * prevBeats) + 1
+      beats,
+      Math.floor(clampedHoldProgress * beats) + 1
     );
-    return `Tenez ${currentHoldBeat}/${prevBeats}`;
+    return `Tenez ${currentHoldBeat}/${beats}`;
   }
-
-  return 'Tenez...';
+  if (beats === 0.5) {
+    return 'Tenez ½t';
+  }
+  return 'Tenez 1t';
 }
 
 const StaffViewComponent: React.FC<StaffViewProps> = ({
@@ -87,9 +73,7 @@ const StaffViewComponent: React.FC<StaffViewProps> = ({
   mode = 'lecture',
   timeSignature = [4, 4],
   noteRecords = [],
-  beatProgress = 0,
-  preStartBeatProgress = 0,
-  currentBeat = 1,
+  beatProgress = 1,
   lastMismatch,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -97,7 +81,18 @@ const StaffViewComponent: React.FC<StaffViewProps> = ({
   const svgWidth = Math.max(540, START_X + notes.length * NOTE_SPACING + 60);
   const measureBarIndices = computeMeasureBarLineIndices(notes, timeSignature);
 
-  // Auto-center the partition viewport around the active note being played
+  // In Rhythm mode, right after striking notes[currentIndex - 1], we hold that note
+  // while its Hold Clock fills from 0.0 -> 1.0 over its own duration.
+  // Once beatProgress >= 1.0 (or on Note 1 at index 0), the green "JOUEZ !" spotlight is on notes[currentIndex].
+  const isHoldingPreviousNote =
+    isRhythmMode &&
+    currentIndex > 0 &&
+    currentIndex <= notes.length &&
+    beatProgress < 1.0;
+
+  const visualFocusIndex = isHoldingPreviousNote ? currentIndex - 1 : currentIndex;
+
+  // Auto-center the partition viewport around the visually active note
   useEffect(() => {
     const centerActiveNote = () => {
       if (!containerRef.current) return;
@@ -105,7 +100,7 @@ const StaffViewComponent: React.FC<StaffViewProps> = ({
       const svg = container.querySelector('svg');
       if (!svg) return;
 
-      const currentNoteX = START_X + currentIndex * NOTE_SPACING;
+      const currentNoteX = START_X + visualFocusIndex * NOTE_SPACING;
       const svgRect = svg.getBoundingClientRect();
       const scale = svgRect.width / svgWidth;
 
@@ -127,7 +122,7 @@ const StaffViewComponent: React.FC<StaffViewProps> = ({
       cancelAnimationFrame(rafId);
       window.removeEventListener('resize', centerActiveNote);
     };
-  }, [currentIndex, notes.length, svgWidth]);
+  }, [visualFocusIndex, notes.length, svgWidth]);
 
   return (
     <div className="w-full bg-white select-none overflow-hidden">
@@ -219,61 +214,58 @@ const StaffViewComponent: React.FC<StaffViewProps> = ({
             const x = START_X + index * NOTE_SPACING;
             const y = CENTER_Y - staffPos * STEP_HEIGHT;
 
-            const isTarget = index === currentIndex;
-            const isCompleted = index < currentIndex;
+            // Is this note currently being held while its duration ring fills up?
+            const isBeingHeld = isHoldingPreviousNote && index === currentIndex - 1;
+            // Is this note ready to be struck right now ("JOUEZ !")?
+            const isReadyToStrike = !isHoldingPreviousNote && index === currentIndex;
+            // While holding note[currentIndex - 1], note[currentIndex] is shown as upcoming ("Suivante")
+            const isNextPreview = isHoldingPreviousNote && index === currentIndex;
+
+            const isCompleted = isHoldingPreviousNote
+              ? index < currentIndex - 1
+              : index < currentIndex;
+
             const record = noteRecords[index];
             const ledgerLines = computeLedgerLineYs(staffPos);
-
-            const activeSweep = currentIndex === 0 ? preStartBeatProgress : beatProgress;
-            const inStrikeZone =
-              isRhythmMode &&
-              (currentIndex === 0
-                ? preStartBeatProgress >= 0.82 || preStartBeatProgress <= 0.22
-                : beatProgress >= 0.65 && beatProgress <= 1.35);
-            const isLate = isRhythmMode && currentIndex > 0 && beatProgress > 1.35;
 
             const isCleanCompleted = isRhythmMode
               ? !record || (record.pitchCorrectFirstTry && record.rhythmStatus === 'on_time')
               : !record || record.pitchCorrectFirstTry;
 
+            // Only show red mismatch if the user already started the piece and struck a wrong key
+            const showMismatchRed = isReadyToStrike && lastMismatch && currentIndex > 0;
+
             const noteColor = isCompleted
               ? isCleanCompleted
                 ? '#059669'
                 : '#d97706'
-              : isTarget
-              ? lastMismatch
+              : isBeingHeld
+              ? '#0284c7'
+              : isReadyToStrike
+              ? showMismatchRed
                 ? '#dc2626'
-                : inStrikeZone
-                ? '#059669'
-                : '#d97706'
+                : '#059669'
+              : isNextPreview
+              ? '#d97706'
               : '#1e293b';
 
             const labelColor = isCompleted
               ? isCleanCompleted
                 ? '#059669'
                 : '#b45309'
-              : isTarget
-              ? lastMismatch
+              : isBeingHeld
+              ? '#0284c7'
+              : isReadyToStrike
+              ? showMismatchRed
                 ? '#dc2626'
-                : inStrikeZone
-                ? '#059669'
-                : '#b45309'
+                : '#059669'
+              : isNextPreview
+              ? '#d97706'
               : '#64748b';
 
             const ringRadius = 24;
             const ringCircumference = 2 * Math.PI * ringRadius;
-            const clampedProgress = Math.min(1, Math.max(0, activeSweep));
-            const rhythmCueText = isTarget
-              ? resolveRhythmCueText(
-                  isRhythmMode,
-                  currentIndex,
-                  inStrikeZone,
-                  isLate,
-                  currentBeat,
-                  clampedProgress,
-                  currentIndex > 0 ? notes[currentIndex - 1] : undefined
-                )
-              : '';
+            const clampedHoldProgress = Math.min(1, Math.max(0, beatProgress));
 
             const stemUp = y > CENTER_Y;
             const stemX = stemUp ? x + 9.5 : x - 9.5;
@@ -292,22 +284,60 @@ const StaffViewComponent: React.FC<StaffViewProps> = ({
 
             return (
               <g key={note.id}>
-                {isTarget && (
+                {/* 1. HOLDING STATE: Clock ring fills on the note you JUST played for THAT note's duration */}
+                {isBeingHeld && (
+                  <g>
+                    <circle
+                      cx={x}
+                      cy={y}
+                      r="21"
+                      fill="#e0f2fe"
+                      opacity="0.95"
+                    />
+                    <circle
+                      cx={x}
+                      cy={y}
+                      r={ringRadius}
+                      fill="none"
+                      stroke="#bae6fd"
+                      strokeWidth="5"
+                    />
+                    <circle
+                      cx={x}
+                      cy={y}
+                      r={ringRadius}
+                      fill="none"
+                      stroke="#0284c7"
+                      strokeWidth="5"
+                      strokeLinecap="round"
+                      strokeDasharray={ringCircumference}
+                      strokeDashoffset={ringCircumference * (1 - clampedHoldProgress)}
+                      transform={`rotate(-90 ${x} ${y})`}
+                    />
+                    <text
+                      x={x}
+                      y={Math.min(34, y - 32)}
+                      textAnchor="middle"
+                      fontSize="11"
+                      fontWeight="800"
+                      fill="#0284c7"
+                      className="font-sans select-none"
+                    >
+                      {resolveHoldCueText(note, clampedHoldProgress)}
+                    </text>
+                  </g>
+                )}
+
+                {/* 2. READY TO STRIKE STATE: Steady green spotlight ("JOUEZ !") with NO running clock */}
+                {isReadyToStrike && (
                   <g>
                     <circle
                       cx={x}
                       cy={y}
                       r={isRhythmMode ? '21' : '20'}
-                      fill={
-                        lastMismatch
-                          ? '#fee2e2'
-                          : inStrikeZone
-                          ? '#d1fae5'
-                          : '#fef3c7'
-                      }
-                      opacity="0.9"
+                      fill={showMismatchRed ? '#fee2e2' : '#d1fae5'}
+                      opacity="0.95"
                     />
-
                     {isRhythmMode && (
                       <>
                         <circle
@@ -315,41 +345,8 @@ const StaffViewComponent: React.FC<StaffViewProps> = ({
                           cy={y}
                           r={ringRadius}
                           fill="none"
-                          stroke="#e2e8f0"
-                          strokeWidth="5"
-                        />
-                        {currentIndex > 0 && (
-                          <circle
-                            cx={x}
-                            cy={y}
-                            r={ringRadius}
-                            fill="none"
-                            stroke="#a7f3d0"
-                            strokeWidth="5"
-                            strokeDasharray={`${ringCircumference * 0.35} ${ringCircumference * 0.65}`}
-                            strokeDashoffset={-ringCircumference * 0.65}
-                            transform={`rotate(-90 ${x} ${y})`}
-                          />
-                        )}
-                        <circle
-                          cx={x}
-                          cy={y}
-                          r={ringRadius}
-                          fill="none"
-                          stroke={
-                            lastMismatch
-                              ? '#dc2626'
-                              : inStrikeZone
-                              ? '#059669'
-                              : isLate
-                              ? '#f43f5e'
-                              : '#f59e0b'
-                          }
-                          strokeWidth="5"
-                          strokeLinecap="round"
-                          strokeDasharray={ringCircumference}
-                          strokeDashoffset={ringCircumference * (1 - clampedProgress)}
-                          transform={`rotate(-90 ${x} ${y})`}
+                          stroke={showMismatchRed ? '#dc2626' : '#10b981'}
+                          strokeWidth="4"
                         />
                         <text
                           x={x}
@@ -357,19 +354,46 @@ const StaffViewComponent: React.FC<StaffViewProps> = ({
                           textAnchor="middle"
                           fontSize="11"
                           fontWeight="800"
-                          fill={
-                            inStrikeZone
-                              ? '#059669'
-                              : isLate
-                              ? '#e11d48'
-                              : '#d97706'
-                          }
+                          fill={showMismatchRed ? '#dc2626' : '#059669'}
                           className="font-sans select-none"
                         >
-                          {rhythmCueText}
+                          ▶ JOUEZ !
                         </text>
                       </>
                     )}
+                  </g>
+                )}
+
+                {/* 3. NEXT PREVIEW STATE: Subtle preview on the upcoming note while holding the previous one */}
+                {isNextPreview && (
+                  <g>
+                    <circle
+                      cx={x}
+                      cy={y}
+                      r="20"
+                      fill="#fef3c7"
+                      opacity="0.6"
+                    />
+                    <circle
+                      cx={x}
+                      cy={y}
+                      r={ringRadius}
+                      fill="none"
+                      stroke="#f59e0b"
+                      strokeWidth="2"
+                      strokeDasharray="4 4"
+                    />
+                    <text
+                      x={x}
+                      y={Math.min(34, y - 32)}
+                      textAnchor="middle"
+                      fontSize="10"
+                      fontWeight="700"
+                      fill="#d97706"
+                      className="font-sans select-none"
+                    >
+                      Suivante
+                    </text>
                   </g>
                 )}
 
@@ -437,8 +461,8 @@ const StaffViewComponent: React.FC<StaffViewProps> = ({
                   x={x}
                   y={isRhythmMode ? 244 : 250}
                   textAnchor="middle"
-                  fontSize={isTarget ? '15' : '13'}
-                  fontWeight={isTarget ? '700' : '500'}
+                  fontSize={isReadyToStrike || isBeingHeld ? '15' : '13'}
+                  fontWeight={isReadyToStrike || isBeingHeld ? '700' : '500'}
                   fill={labelColor}
                   className="font-sans select-none"
                 >
@@ -457,7 +481,9 @@ const StaffViewComponent: React.FC<StaffViewProps> = ({
                         ? record.rhythmStatus === 'on_time'
                           ? '#059669'
                           : '#d97706'
-                        : isTarget
+                        : isBeingHeld
+                        ? '#0284c7'
+                        : isReadyToStrike
                         ? labelColor
                         : '#94a3b8'
                     }
@@ -474,7 +500,7 @@ const StaffViewComponent: React.FC<StaffViewProps> = ({
                     textAnchor="middle"
                     fontSize="11"
                     fontWeight="600"
-                    fill={isTarget ? '#b45309' : '#94a3b8'}
+                    fill={isReadyToStrike ? '#059669' : '#94a3b8'}
                   >
                     {note.finger}
                   </text>

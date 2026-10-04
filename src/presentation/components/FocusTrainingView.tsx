@@ -57,63 +57,42 @@ export const FocusTrainingView: React.FC<FocusTrainingViewProps> = ({
   onSetGain,
 }) => {
   const targetNote = level.notes[currentIndex] || level.notes[0];
+  const heldNote = currentIndex > 0 ? level.notes[currentIndex - 1] : null;
   const isTreble = level.clef === 'treble';
 
   const [activeMode, setActiveMode] = useState<LessonMode>(() => level.mode || 'lecture');
-  const [rhythmPulseActive, setRhythmPulseActive] = useState<boolean>(true);
-  const [currentBeat, setCurrentBeat] = useState<number>(1);
-  const [preStartBeatProgress, setPreStartBeatProgress] = useState<number>(0);
-  const [beatProgress, setBeatProgress] = useState<number>(0);
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const [liveStopwatchSec, setLiveStopwatchSec] = useState<number>(0);
 
   const isRhythmMode = activeMode === 'rythme';
-  const beatsPerMeasure = level.timeSignature[0] || 4;
 
-  // Smooth 30ms animation loop driving the Beat Ring on the Active Note & Stopwatch
+  // Synchronous hold progress (0.0 -> 1.0) of the note that was JUST struck (`level.notes[currentIndex - 1]`).
+  // Because it is derived directly from `lastMatchTimeMs`, it starts at 0.0 on the exact frame a note is struck!
+  const beatProgress =
+    hasPerformanceStarted && lastMatchTimeMs > 0 && expectedIntervalMs > 0
+      ? Math.max(0, nowMs - lastMatchTimeMs) / expectedIntervalMs
+      : 1;
+
+  // Smooth 30ms animation loop driving the Hold Ring on the note just played & Stopwatch
   useEffect(() => {
-    if (isCompleted) return;
+    if (isCompleted || !hasPerformanceStarted || lastMatchTimeMs <= 0) {
+      return;
+    }
 
-    const beatDurationMs = 60000 / Math.max(30, Math.min(200, tempoBpm));
-    const loopOriginMs = hasPerformanceStarted && lastMatchTimeMs > 0 ? lastMatchTimeMs : Date.now();
     const startStopwatchAnchorMs = Date.now() - elapsedSeconds * 1000;
 
-    const interval = setInterval(() => {
-      const now = Date.now();
+    const updateProgress = () => {
+      const currentNow = Date.now();
+      setNowMs(currentNow);
+      setLiveStopwatchSec(Math.max(0, Math.floor((currentNow - startStopwatchAnchorMs) / 1000)));
+    };
 
-      // 1. Pre-start & continuous beat ring sweep (for Note 1 & measure beat counter)
-      if (isRhythmMode && rhythmPulseActive) {
-        const elapsedFromOrigin = Math.max(0, now - loopOriginMs);
-        const totalBeatsElapsed = elapsedFromOrigin / beatDurationMs;
-        const beatInMeasure = (Math.floor(totalBeatsElapsed) % beatsPerMeasure) + 1;
-        const withinBeatFraction = totalBeatsElapsed - Math.floor(totalBeatsElapsed);
-
-        setCurrentBeat(beatInMeasure);
-        setPreStartBeatProgress(withinBeatFraction);
-      } else {
-        setPreStartBeatProgress(0);
-      }
-
-      // 2. Post-Note-1 Stopwatch & Per-Note Beat Ring Progress
-      if (hasPerformanceStarted && lastMatchTimeMs > 0) {
-        setLiveStopwatchSec(Math.max(0, Math.floor((now - startStopwatchAnchorMs) / 1000)));
-        if (expectedIntervalMs > 0) {
-          setBeatProgress((now - lastMatchTimeMs) / expectedIntervalMs);
-        } else {
-          setBeatProgress(0);
-        }
-      } else {
-        setLiveStopwatchSec(0);
-        setBeatProgress(0);
-      }
-    }, 30);
+    updateProgress();
+    const interval = setInterval(updateProgress, 30);
 
     return () => clearInterval(interval);
   }, [
     isCompleted,
-    isRhythmMode,
-    rhythmPulseActive,
-    tempoBpm,
-    beatsPerMeasure,
     hasPerformanceStarted,
     lastMatchTimeMs,
     expectedIntervalMs,
@@ -139,6 +118,15 @@ export const FocusTrainingView: React.FC<FocusTrainingViewProps> = ({
     : hasPerformanceStarted
     ? liveStopwatchSec
     : 0;
+
+  const isHoldingPreviousNote =
+    isRhythmMode &&
+    hasPerformanceStarted &&
+    currentIndex > 0 &&
+    beatProgress < 1.0 &&
+    heldNote !== null;
+
+  const displayedDurationNote = isHoldingPreviousNote && heldNote ? heldNote : targetNote;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
@@ -322,16 +310,24 @@ export const FocusTrainingView: React.FC<FocusTrainingViewProps> = ({
           </div>
         )}
 
-        {/* Status & Stopwatch / Beat Ring Instruction Bar */}
+        {/* Status & Stopwatch / Clear Hold-Then-Play Guidance Bar */}
         <div className="flex flex-wrap items-center justify-between gap-4 text-xs text-slate-400">
           <div className="flex items-center gap-3">
             {!isCompleted && (
-              <span className={hasPerformanceStarted ? 'text-emerald-400 font-medium' : 'text-slate-300'}>
-                {hasPerformanceStarted
-                  ? `Note ${currentIndex + 1}/${level.notes.length} · ⏱ ${displayedSeconds}s`
-                  : isRhythmMode
-                  ? `Jouez la 1ère note (${level.notes[0]?.solfegePitch}) quand l'anneau sur la note passe au vert`
-                  : `Jouez la 1ère note (${level.notes[0]?.solfegePitch}) pour démarrer le chrono`}
+              <span
+                className={
+                  isHoldingPreviousNote
+                    ? 'text-sky-400 font-medium'
+                    : hasPerformanceStarted
+                    ? 'text-emerald-400 font-medium'
+                    : 'text-slate-300'
+                }
+              >
+                {!hasPerformanceStarted
+                  ? `Prêt · Jouez la 1ère note (${level.notes[0]?.solfegePitch}) quand vous voulez pour lancer le rythme`
+                  : isHoldingPreviousNote && heldNote
+                  ? `Tenez ${heldNote.solfegePitch} pendant que l'anneau bleu se remplit · Puis jouez ${targetNote.solfegePitch} sur JOUEZ !`
+                  : `▶ JOUEZ ${targetNote.solfegePitch} maintenant ! (Note ${currentIndex + 1}/${level.notes.length} · ⏱ ${displayedSeconds}s)`}
               </span>
             )}
 
@@ -339,9 +335,9 @@ export const FocusTrainingView: React.FC<FocusTrainingViewProps> = ({
               <>
                 <span className="text-slate-800">·</span>
                 <span>
-                  Valeur :{' '}
-                  <strong className="text-amber-400 font-medium">
-                    {getNoteDurationLabel(targetNote.duration)}
+                  Durée :{' '}
+                  <strong className={isHoldingPreviousNote ? 'text-sky-400 font-medium' : 'text-emerald-400 font-medium'}>
+                    {getNoteDurationLabel(displayedDurationNote.duration)}
                   </strong>
                 </span>
               </>
@@ -358,15 +354,9 @@ export const FocusTrainingView: React.FC<FocusTrainingViewProps> = ({
               >
                 −
               </button>
-              <button
-                onClick={() => setRhythmPulseActive((a) => !a)}
-                className={`cursor-pointer transition-colors tabular-nums ${
-                  rhythmPulseActive ? 'text-slate-300' : 'text-slate-600 line-through'
-                }`}
-                title="Activer/Désactiver l'anneau de pulsation"
-              >
+              <span className="text-slate-300 tabular-nums">
                 {tempoBpm} BPM
-              </button>
+              </span>
               <button
                 onClick={() => onSetTempoBpm(Math.min(160, tempoBpm + 5))}
                 className="text-slate-500 hover:text-slate-200 px-1 cursor-pointer"
@@ -382,7 +372,7 @@ export const FocusTrainingView: React.FC<FocusTrainingViewProps> = ({
           )}
         </div>
 
-        {/* Clean Music Sheet Strip with Beat Ring directly on the Active Note */}
+        {/* Clean Music Sheet Strip with Hold-Then-Play Ring */}
         <StaffView
           notes={level.notes}
           currentIndex={currentIndex}
@@ -390,9 +380,7 @@ export const FocusTrainingView: React.FC<FocusTrainingViewProps> = ({
           mode={activeMode}
           timeSignature={level.timeSignature}
           noteRecords={gradeSummary.noteRecords}
-          beatProgress={isRhythmMode && hasPerformanceStarted ? beatProgress : 0}
-          preStartBeatProgress={isRhythmMode && !hasPerformanceStarted ? preStartBeatProgress : 0}
-          currentBeat={currentBeat}
+          beatProgress={isRhythmMode && hasPerformanceStarted ? beatProgress : 1}
           lastMismatch={lastMismatch}
         />
 
