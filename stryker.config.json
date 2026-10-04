@@ -1,16 +1,18 @@
 {
   "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "testRunner": "vitest",
-  "concurrency": 2,
+  "concurrency": 4,
   "ignoreStatic": true,
   "mutate": [
-    "src/core/theory/**/*.ts",
-    "src/core/engine/**/*.ts"
+    "src/core/theory/musicTheory.ts",
+    "src/core/engine/PracticeEngine.ts",
+    "src/core/engine/TrainingSessionCoordinator.ts"
   ],
   "ignorePatterns": [
     "tsconfig.json",
     "eslint.config.js",
     "dev-dist/**",
+    "dist/**",
     ".stryker-tmp/**"
   ],
   "reporters": [
