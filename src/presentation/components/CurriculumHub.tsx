@@ -6,27 +6,30 @@ import {
   ClefType,
   LessonMode,
 } from '../../core/models/music.types.ts';
-import { ProgressStorage } from '../../infrastructure/storage/ProgressStorage.ts';
+import { LevelProgress } from '../../core/ports/ProgressRepositoryPort.ts';
+import { PWAInstallButton } from './PWAInstallButton.tsx';
 
 interface CurriculumHubProps {
-  levels: PartitionPiece[];
-  onSelectLevel: (level: PartitionPiece) => void;
-  onOpenGuide: () => void;
+  readonly levels: readonly PartitionPiece[];
+  readonly progressMap: Readonly<Record<string, LevelProgress>>;
+  readonly onSelectLevel: (level: PartitionPiece) => void;
+  readonly onOpenGuide: () => void;
 }
 
 type LevelTab = 'all' | DifficultyLevel;
 type ModeFilter = 'all' | LessonMode;
 type ClefFilter = 'all' | ClefType;
 
-const LEVEL_TABS: { id: LevelTab; label: string }[] = [
-  { id: 'all', label: 'Tous les niveaux' },
-  { id: 'Débutant', label: 'Débutant' },
-  { id: 'Intermédiaire', label: 'Intermédiaire' },
-  { id: 'Avancé', label: 'Avancé' },
-];
+const LEVEL_TABS: readonly Readonly<{ id: LevelTab; label: string }>[] = Object.freeze([
+  Object.freeze({ id: 'all', label: 'Tous les niveaux' }),
+  Object.freeze({ id: 'Débutant', label: 'Débutant' }),
+  Object.freeze({ id: 'Intermédiaire', label: 'Intermédiaire' }),
+  Object.freeze({ id: 'Avancé', label: 'Avancé' }),
+]);
 
 export const CurriculumHub: React.FC<CurriculumHubProps> = ({
   levels,
+  progressMap,
   onSelectLevel,
   onOpenGuide,
 }) => {
@@ -34,7 +37,6 @@ export const CurriculumHub: React.FC<CurriculumHubProps> = ({
   const [selectedMode, setSelectedMode] = useState<ModeFilter>('all');
   const [selectedClef, setSelectedClef] = useState<ClefFilter>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const progressMap = ProgressStorage.getProgress();
 
   const filteredLevels = levels.filter((piece) => {
     const pieceMode = piece.mode || 'lecture';
@@ -70,6 +72,7 @@ export const CurriculumHub: React.FC<CurriculumHubProps> = ({
             <span className="tabular-nums">
               {completedCount}/{levels.length} terminés
             </span>
+            <PWAInstallButton />
             <button
               onClick={onOpenGuide}
               className="text-slate-400 hover:text-slate-100 transition-colors cursor-pointer"

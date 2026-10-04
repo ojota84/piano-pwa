@@ -1,30 +1,30 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import confetti from 'canvas-confetti';
+import React, { useState, useEffect, useRef } from 'react';
 import { PartitionPiece } from '../core/models/music.types.ts';
-import { PitchResult } from '../core/models/pitch.types.ts';
-import {
-  TrainingSessionCoordinator,
-  SessionSnapshot,
-} from '../core/engine/TrainingSessionCoordinator.ts';
 import { AudioPitchPort } from '../core/ports/AudioPitchPort.ts';
 import { WebAudioPitchAdapter } from '../infrastructure/audio/WebAudioPitchAdapter.ts';
 import { partitionRepository } from '../infrastructure/data/InMemoryPartitionRepository.ts';
-import { ProgressStorage } from '../infrastructure/storage/ProgressStorage.ts';
+import { progressRepository } from '../infrastructure/storage/ProgressStorage.ts';
+import { useTrainingSession } from './hooks/useTrainingSession.ts';
 import { CurriculumHub } from './components/CurriculumHub.tsx';
 import { FocusTrainingView } from './components/FocusTrainingView.tsx';
 import { AndroidSyncModal } from './components/AndroidSyncModal.tsx';
+import { OfflineIndicator } from './components/OfflineIndicator.tsx';
 
 export default function App() {
   const allPartitions = partitionRepository.getAllPartitions();
 
-  // Pure Domain Session Coordinator (authoritative state for Hub <-> Training & Pitch/Rhythm evaluation)
-  const coordinatorRef = useRef<TrainingSessionCoordinator>(
-    new TrainingSessionCoordinator(allPartitions[0])
-  );
+  const {
+    session,
+    progressMap,
+    onPitchDetected,
+    startLevel,
+    resetLevel,
+    backToHub,
+    setTempoBpm,
+    clearPitch,
+    getElapsedTimeSeconds,
+  } = useTrainingSession(allPartitions[0], progressRepository);
 
-  const [session, setSession] = useState<SessionSnapshot>(() =>
-    new TrainingSessionCoordinator(allPartitions[0]).getSnapshot()
-  );
   const [isListening, setIsListening] = useState<boolean>(false);
   const [elapsedSeconds, setElapsedSeconds] = useState<number>(0);
   const [isGuideOpen, setIsGuideOpen] = useState<boolean>(false);
@@ -77,34 +77,16 @@ export default function App() {
   useEffect(() => {
     if (session.isCompleted || session.activeScreen !== 'training') return;
     const interval = setInterval(() => {
-      setElapsedSeconds(coordinatorRef.current.getEngine().getElapsedTimeSeconds());
+      setElapsedSeconds(getElapsedTimeSeconds());
     }, 250);
     return () => clearInterval(interval);
-  }, [session.isCompleted, session.activeScreen, session.runId, session.hasPerformanceStarted]);
-
-  /**
-   * Stable Audio Pitch Callback:
-   * Delegates directly to TrainingSessionCoordinator instance ref, guaranteeing
-   * zero stale React state closures when transitioning from Hub to Training.
-   */
-  const onPitchDetected = useCallback((detected: PitchResult) => {
-    const { snapshot } = coordinatorRef.current.handlePitchDetected(detected);
-    setSession(snapshot);
-
-    if (snapshot.justCompletedLevel) {
-      ProgressStorage.recordLevelCompletion(
-        snapshot.selectedPiece.id,
-        snapshot.gradeSummary.overallScorePercent,
-        snapshot.elapsedSeconds
-      );
-
-      confetti({
-        particleCount: 100,
-        spread: 80,
-        origin: { y: 0.6 },
-      });
-    }
-  }, []);
+  }, [
+    session.isCompleted,
+    session.activeScreen,
+    session.runId,
+    session.hasPerformanceStarted,
+    getElapsedTimeSeconds,
+  ]);
 
   const toggleListening = async () => {
     if (!audioAdapterRef.current) return;
@@ -112,7 +94,7 @@ export default function App() {
     if (isListening) {
       audioAdapterRef.current.stop();
       setIsListening(false);
-      setSession(coordinatorRef.current.clearPitch());
+      clearPitch();
     } else {
       try {
         await audioAdapterRef.current.start(onPitchDetected);
@@ -129,18 +111,15 @@ export default function App() {
     }
   };
 
-  const resetPiece = (piece?: PartitionPiece) => {
-    const snapshot = coordinatorRef.current.resetLevel(piece);
-    setSession(snapshot);
+  const handleResetPiece = (piece?: PartitionPiece) => {
+    resetLevel(piece);
     setElapsedSeconds(0);
   };
 
   const handleStartLevel = (level: PartitionPiece) => {
-    const snapshot = coordinatorRef.current.startLevel(level);
-    setSession(snapshot);
+    startLevel(level);
     setElapsedSeconds(0);
 
-    // Auto-start or refresh listening callback for seamless practice
     if (audioAdapterRef.current) {
       audioAdapterRef.current
         .start(onPitchDetected)
@@ -149,16 +128,6 @@ export default function App() {
         })
         .catch(() => {});
     }
-  };
-
-  const handleBackToHub = () => {
-    const snapshot = coordinatorRef.current.backToHub();
-    setSession(snapshot);
-  };
-
-  const handleSetTempoBpm = (bpm: number) => {
-    const snapshot = coordinatorRef.current.setTempoBpm(bpm);
-    setSession(snapshot);
   };
 
   // Find next level in numerical sequence
@@ -173,6 +142,7 @@ export default function App() {
       {session.activeScreen === 'hub' ? (
         <CurriculumHub
           levels={allPartitions}
+          progressMap={progressMap}
           onSelectLevel={handleStartLevel}
           onOpenGuide={() => setIsGuideOpen(true)}
         />
@@ -194,10 +164,10 @@ export default function App() {
           isListening={isListening}
           currentPitch={session.currentPitch}
           lastMismatch={session.lastMismatch}
-          onBackToHub={handleBackToHub}
-          onReset={() => resetPiece()}
-          onSelectNextLevel={(next) => resetPiece(next)}
-          onSetTempoBpm={handleSetTempoBpm}
+          onBackToHub={backToHub}
+          onReset={() => handleResetPiece()}
+          onSelectNextLevel={(next) => handleResetPiece(next)}
+          onSetTempoBpm={setTempoBpm}
           onToggleListening={toggleListening}
           onResumeAudio={resumeAudio}
           onSetSensitivity={(thresh) => {
@@ -214,6 +184,7 @@ export default function App() {
       )}
 
       <AndroidSyncModal isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} />
+      <OfflineIndicator />
     </>
   );
 }

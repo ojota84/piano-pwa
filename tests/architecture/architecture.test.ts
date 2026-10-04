@@ -91,28 +91,40 @@ describe('Ports & Adapters Architectural Boundary Tests', () => {
     });
   });
 
-  it('Rule 4: Infrastructure adapters MUST implement their corresponding Core Ports', () => {
+  it('Rule 4: Infrastructure adapters MUST implement their corresponding Core Ports and delegate DSP to Core', () => {
     const pitchAdapterFile = path.join(infraDir, 'audio/WebAudioPitchAdapter.ts');
     const repoFile = path.join(infraDir, 'data/InMemoryPartitionRepository.ts');
+    const progressFile = path.join(infraDir, 'storage/ProgressStorage.ts');
+    const coreDspFile = path.join(coreDir, 'dsp/pitchDetector.ts');
 
     expect(fs.existsSync(pitchAdapterFile)).toBe(true);
     expect(fs.existsSync(repoFile)).toBe(true);
+    expect(fs.existsSync(progressFile)).toBe(true);
+    expect(fs.existsSync(coreDspFile)).toBe(true);
 
     const pitchContent = fs.readFileSync(pitchAdapterFile, 'utf-8');
     expect(pitchContent).toContain('implements AudioPitchPort');
+    expect(pitchContent).toContain('detectPitchFromBuffer');
 
     const repoContent = fs.readFileSync(repoFile, 'utf-8');
     expect(repoContent).toContain('implements PartitionRepositoryPort');
+
+    const progressContent = fs.readFileSync(progressFile, 'utf-8');
+    expect(progressContent).toContain('implements ProgressRepositoryPort');
   });
 
-  it('Rule 5: Presentation layer components MUST NOT contain raw pitch DSP autocorrelation algorithms', () => {
-    const presComponents = getFilesRecursively(presentationDir);
+  it('Rule 5: Presentation layer components MUST NOT contain raw pitch DSP or import storage adapters directly', () => {
+    const presComponents = getFilesRecursively(path.join(presentationDir, 'components'));
 
     presComponents.forEach((filePath) => {
       const content = fs.readFileSync(filePath, 'utf-8');
       expect(
         content.includes('parabolic') || content.includes('bestCorrelation'),
-        `Presentation file ${path.relative(rootDir, filePath)} contains DSP pitch algorithm! Audio DSP must live in Infrastructure adapters.`
+        `Presentation file ${path.relative(rootDir, filePath)} contains DSP pitch algorithm!`
+      ).toBe(false);
+      expect(
+        content.includes('infrastructure/storage'),
+        `Presentation component ${path.relative(rootDir, filePath)} imports infrastructure/storage directly instead of receiving ProgressRepositoryPort data via props!`
       ).toBe(false);
     });
   });

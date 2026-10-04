@@ -80,7 +80,7 @@ function resolveRhythmCueText(
   return 'Tenez...';
 }
 
-export const StaffView: React.FC<StaffViewProps> = ({
+const StaffViewComponent: React.FC<StaffViewProps> = ({
   notes,
   currentIndex,
   clef,
@@ -487,3 +487,5 @@ export const StaffView: React.FC<StaffViewProps> = ({
     </div>
   );
 };
+
+export const StaffView = React.memo(StaffViewComponent);

@@ -1,15 +1,17 @@
-export interface LevelProgress {
-  readonly levelId: string;
-  readonly completed: boolean;
-  readonly bestAccuracy: number;
-  readonly bestTimeSeconds: number;
-  readonly lastPlayedAt: number;
-}
+import {
+  LevelProgress,
+  ProgressRepositoryPort,
+} from '../../core/ports/ProgressRepositoryPort.ts';
+
+export type { LevelProgress };
 
 const STORAGE_KEY = 'piano_cadence_progress_v1';
 
-export class ProgressStorage {
-  public static getProgress(): Readonly<Record<string, LevelProgress>> {
+/**
+ * Infrastructure Adapter implementing ProgressRepositoryPort backed by browser localStorage.
+ */
+export class LocalStorageProgressRepository implements ProgressRepositoryPort {
+  public getProgress(): Readonly<Record<string, LevelProgress>> {
     try {
       const data = localStorage.getItem(STORAGE_KEY);
       if (!data) return Object.freeze({});
@@ -19,12 +21,12 @@ export class ProgressStorage {
     }
   }
 
-  public static getLevelProgress(levelId: string): LevelProgress | null {
+  public getLevelProgress(levelId: string): Readonly<LevelProgress> | null {
     const all = this.getProgress();
     return all[levelId] || null;
   }
 
-  public static recordLevelCompletion(
+  public recordLevelCompletion(
     levelId: string,
     accuracy: number,
     timeSeconds: number
@@ -55,5 +57,25 @@ export class ProgressStorage {
     }
 
     return updated;
+  }
+}
+
+export const progressRepository: ProgressRepositoryPort = new LocalStorageProgressRepository();
+
+export class ProgressStorage {
+  public static getProgress(): Readonly<Record<string, LevelProgress>> {
+    return progressRepository.getProgress();
+  }
+
+  public static getLevelProgress(levelId: string): Readonly<LevelProgress> | null {
+    return progressRepository.getLevelProgress(levelId);
+  }
+
+  public static recordLevelCompletion(
+    levelId: string,
+    accuracy: number,
+    timeSeconds: number
+  ): Readonly<LevelProgress> {
+    return progressRepository.recordLevelCompletion(levelId, accuracy, timeSeconds);
   }
 }
