@@ -1,34 +1,50 @@
-# Technical Design: Piano Sight-Reading PWA (TypeScript + Vitest)
+# Technical Design — Hexagonal & Functional Architecture
 
-## 1. System Architecture: Clean Architecture
+## 1. Layered Hexagonal Architecture (Ports & Adapters)
 
+```text
++-----------------------------------------------------------------------+
+|                       PRESENTATION LAYER (React 19)                   |
+|  src/presentation/                                                    |
+|  - App.tsx, CurriculumHub.tsx, FocusTrainingView.tsx                  |
+|  - StaffView.tsx (Memoized SVG Pentagram & Active-Note Beat Ring)     |
+|  - AcousticTuner.tsx, PWAInstallButton.tsx, OfflineIndicator.tsx      |
+|  - hooks/useTrainingSession.ts, hooks/usePWAInstall.ts                |
++-----------------------------------+-----------------------------------+
+                                    | depends inward on
+                                    v
++-----------------------------------------------------------------------+
+|                    CORE DOMAIN & PORTS (Pure TypeScript)              |
+|  src/core/                                                            |
+|  - models/  : Readonly interfaces (MusicalNote, PartitionPiece, etc.) |
+|  - dsp/     : pitchDetector.ts (Pure McLeod Autocorrelation DSP)      |
+|  - theory/  : musicTheory.ts (Diatonic staff math & rhythm beats)     |
+|  - engine/  : PracticeEngine.ts & TrainingSessionCoordinator.ts       |
+|  - ports/   : AudioPitchPort, PartitionRepositoryPort,                |
+|               ProgressRepositoryPort                                  |
++-----------------------------------+-----------------------------------+
+                                    ^ implemented by
+                                    |
++-----------------------------------------------------------------------+
+|                        INFRASTRUCTURE ADAPTERS                        |
+|  src/infrastructure/                                                  |
+|  - audio/   : WebAudioPitchAdapter.ts (Zero-alloc 60fps Web Audio)    |
+|  - data/    : InMemoryPartitionRepository.ts (34 Solfège partitions)  |
+|  - storage/ : LocalStorageProgressRepository (ProgressStorage.ts)     |
++-----------------------------------------------------------------------+
 ```
-+--------------------------------------------------------------+
-|                    Presentation Layer (React)                |
-|  - StaffView.tsx (SVG Pentagram with exact diatonic coords)   |
-|  - AcousticTuner.tsx (VU-meter, sensitivity presets, mic)    |
-|  - PianoKeyboard.tsx (Interactive keyboard & preview)        |
-+------------------------------+-------------------------------+
-                               | calls / receives state
-                               v
-+--------------------------------------------------------------+
-|            Core Domain Engine (src/lib/domain/)             |
-|  - practiceEngine.ts: "Wait For Me" state machine            |
-|  - musicTheory.ts: Diatonic staff math & Solfège mapping     |
-|  - types.ts: Pure interfaces (MusicalNote, PartitionPiece)   |
-|  -> 100% Tested via Vitest (practiceEngine.test.ts, etc.)    |
-+------------------------------+-------------------------------+
-                               ^ feeds pitch results
-                               |
-+--------------------------------------------------------------+
-|             Acoustic Audio Pipeline (Web Audio API)          |
-|  - audioPitch.ts: Autocorrelation + 60Hz High-pass filter     |
-|  - Microscopic latency (<40ms), strict 0.75 correlation      |
-+--------------------------------------------------------------+
-```
 
-## 2. Audio Anti-Feedback & Noise Rejection
-1. **Silent Visual Feedback**: All audio chimes are muted during microphone listening mode to prevent acoustic feedback (Larsen loop) with the phone speaker.
-2. **60Hz High-Pass Filter**: Strips background room rumble, AC hum, and table vibrations.
-3. **500ms Refractory Lockout**: Ignores prolonged piano string resonance from previous key strikes.
-4. **2-Frame Consecutive Confirmation**: Filters out transient room clicks.
+---
+
+## 2. Core Engineering Principles
+
+1. **Zero Platform Coupling in `src/core/`**:
+   - `src/core/` never imports React, DOM APIs, `localStorage`, or Web Audio globals (`AudioContext`, `navigator.mediaDevices`).
+   - Enforced automatically on every test run by `tests/architecture/architecture.test.ts`.
+2. **Strict Immutability & Functional Programming**:
+   - All domain interfaces and arrays use `readonly` modifiers and `Object.freeze(...)`.
+   - Domain calculations use pure higher-order functions (`reduce`, `map`, `filter`, `find`, `Array.from`) and side-effect-free state transitions (`evaluatePitchTransition`, `computeGradeSummary`).
+3. **Zero-Allocation Real-Time Audio Loop**:
+   - `WebAudioPitchAdapter` pre-allocates reusable `Float32Array<ArrayBuffer>` buffers once per session and delegates pitch math to `detectPitchFromBuffer` in `src/core/dsp/pitchDetector.ts`.
+4. **Mutation-Tested Domain Quality**:
+   - Verified via **Vitest** unit/architecture tests and **Stryker Mutator** (`>94%` overall mutation score; `100%` on `musicTheory.ts` and `TrainingSessionCoordinator.ts`).
