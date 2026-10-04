@@ -128,4 +128,82 @@ describe('PracticeEngine Unit Tests (Core Domain)', () => {
     expect(engine.getCurrentIndex()).toBe(3);
     expect(engine.getAccuracyPercentage()).toBe(100);
   });
+
+  it('should NOT turn La 5 green from the decaying harmonic of a previously played La 4 unless La 5 is genuinely struck', async () => {
+    const octavePiece: PartitionPiece = {
+      ...testPiece,
+      notes: [
+        { id: 'a4', solfegePitch: 'La 4', midi: 69, step: 'La', octave: 4, duration: 'quarter' },
+        { id: 'a5', solfegePitch: 'La 5', midi: 81, step: 'La', octave: 5, duration: 'quarter' },
+      ],
+    };
+    engine.loadPartition(octavePiece);
+
+    const la4Strike: PitchResult = {
+      frequency: 440,
+      solfegeName: 'La',
+      octave: 4,
+      midi: 69,
+      cents: 0,
+      confidence: 0.92,
+      rms: 0.06,
+      isPitched: true,
+    };
+
+    // 1. User plays La 4 -> matches Note 0 (La 4)
+    engine.processDetectedPitch(la4Strike);
+    const match1 = engine.processDetectedPitch(la4Strike);
+    expect(match1.status).toBe('MATCH');
+    expect(engine.getCurrentIndex()).toBe(1); // Now targeting La 5 (MIDI 81)
+
+    // Wait past 500ms refractory lockout while the La 4 string is still decaying
+    await new Promise((r) => setTimeout(r, 530));
+
+    // 2. Decaying La 4 fundamental (MIDI 69) or decaying 2nd harmonic La 5 (MIDI 81) with lower/decaying RMS
+    const decayingLa4: PitchResult = { ...la4Strike, rms: 0.04 };
+    const decayingLa5Harmonic: PitchResult = {
+      frequency: 880,
+      solfegeName: 'La',
+      octave: 5,
+      midi: 81,
+      cents: 0,
+      confidence: 0.85,
+      rms: 0.03,
+      isPitched: true,
+    };
+
+    expect(engine.processDetectedPitch(decayingLa4).status).toBe('IGNORED');
+    expect(engine.processDetectedPitch(decayingLa5Harmonic).status).toBe('IGNORED');
+    expect(engine.processDetectedPitch(decayingLa5Harmonic).status).toBe('IGNORED');
+    // Cursor must still be on La 5 (index 1), NOT completed!
+    expect(engine.getCurrentIndex()).toBe(1);
+    expect(engine.isCompleted()).toBe(false);
+
+    // 3. Now user genuinely strikes La 5 (sharp RMS attack surge from 0.03 to 0.06)
+    const genuineLa5Strike: PitchResult = {
+      ...decayingLa5Harmonic,
+      rms: 0.06,
+    };
+    engine.processDetectedPitch(genuineLa5Strike);
+    const match2 = engine.processDetectedPitch(genuineLa5Strike);
+    expect(match2.status).toBe('MATCH');
+    expect(engine.isCompleted()).toBe(true);
+  });
+
+  it('should ignore low-confidence ambient room noise when nothing is played on the piano', () => {
+    const ambientNoise: PitchResult = {
+      frequency: 261.63,
+      solfegeName: 'Do',
+      octave: 4,
+      midi: 60,
+      cents: 0,
+      confidence: 0.52, // Below 0.68 piano periodicity threshold
+      rms: 0.01,
+      isPitched: true,
+    };
+
+    expect(engine.processDetectedPitch(ambientNoise).status).toBe('IGNORED');
+    expect(engine.processDetectedPitch(ambientNoise).status).toBe('IGNORED');
+    expect(engine.getCurrentIndex()).toBe(0);
+  });
 });

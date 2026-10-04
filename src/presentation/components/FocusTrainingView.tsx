@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { ArrowLeft, RotateCcw, Check, ChevronRight } from 'lucide-react';
 import { PartitionPiece } from '../../core/models/music.types.ts';
 import { PitchResult } from '../../core/models/pitch.types.ts';
@@ -43,6 +43,19 @@ export const FocusTrainingView: React.FC<FocusTrainingViewProps> = ({
   const targetNote = level.notes[currentIndex] || level.notes[0];
   const isTreble = level.clef === 'treble';
 
+  // Allow pressing Enter when level is completed to immediately launch the proposed next level
+  useEffect(() => {
+    if (!isCompleted || !nextLevel) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        onSelectNextLevel(nextLevel);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isCompleted, nextLevel, onSelectNextLevel]);
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
       {/* Minimalist Top Bar */}
@@ -85,7 +98,58 @@ export const FocusTrainingView: React.FC<FocusTrainingViewProps> = ({
       </header>
 
       {/* Main Minimalist Practice Canvas */}
-      <main className="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-6 py-6 flex flex-col gap-4">
+      <main className="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-6 py-5 flex flex-col gap-4">
+        {/* Immediate Next-Level Proposal Banner when completed */}
+        {isCompleted && (
+          <div className="py-4 px-5 bg-slate-900/90 border-l-2 border-emerald-400 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex flex-col gap-0.5">
+              <div className="flex items-center gap-2 text-emerald-400 text-xs font-semibold">
+                <Check className="w-4 h-4 stroke-[2.5]" />
+                <span>Leçon terminée</span>
+              </div>
+              {nextLevel ? (
+                <p className="text-sm text-slate-200">
+                  Prochaine étape proposée :{' '}
+                  <strong className="font-semibold text-white">{nextLevel.title}</strong>{' '}
+                  <span className="text-xs text-slate-400">
+                    ({nextLevel.difficulty} · Clé de {nextLevel.clef === 'treble' ? 'Sol' : 'Fa'})
+                  </span>
+                </p>
+              ) : (
+                <p className="text-sm text-slate-200">
+                  Vous avez terminé la dernière leçon du parcours !
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center gap-4 shrink-0 w-full sm:w-auto justify-end">
+              <button
+                onClick={onReset}
+                className="text-xs text-slate-400 hover:text-slate-100 transition-colors cursor-pointer py-2 px-2"
+              >
+                Rejouer
+              </button>
+
+              {nextLevel ? (
+                <button
+                  onClick={() => onSelectNextLevel(nextLevel)}
+                  className="flex items-center gap-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-semibold text-xs px-4 py-2.5 transition-colors cursor-pointer"
+                >
+                  <span>Niveau suivant</span>
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              ) : (
+                <button
+                  onClick={onBackToHub}
+                  className="flex items-center gap-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-semibold text-xs px-4 py-2.5 transition-colors cursor-pointer"
+                >
+                  <span>Retour aux leçons</span>
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Clean Music Sheet Strip */}
         <StaffView
           notes={level.notes}
@@ -104,44 +168,6 @@ export const FocusTrainingView: React.FC<FocusTrainingViewProps> = ({
           onSetSensitivity={onSetSensitivity}
           onSetGain={onSetGain}
         />
-
-        {/* Minimalist Completion Bar */}
-        {isCompleted && (
-          <div className="py-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-900">
-            <div className="flex items-center gap-2.5 text-emerald-400">
-              <Check className="w-5 h-5 stroke-[2.5]" />
-              <span className="text-base font-medium text-slate-100">
-                Leçon terminée
-              </span>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-6 text-xs">
-              <button
-                onClick={onReset}
-                className="text-slate-400 hover:text-slate-100 transition-colors cursor-pointer"
-              >
-                Rejouer
-              </button>
-
-              <button
-                onClick={onBackToHub}
-                className="text-slate-400 hover:text-slate-100 transition-colors cursor-pointer"
-              >
-                Toutes les leçons
-              </button>
-
-              {nextLevel && (
-                <button
-                  onClick={() => onSelectNextLevel(nextLevel)}
-                  className="flex items-center gap-1 text-amber-400 hover:text-amber-300 font-semibold transition-colors cursor-pointer"
-                >
-                  <span>Suivant : {nextLevel.title}</span>
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-          </div>
-        )}
       </main>
     </div>
   );

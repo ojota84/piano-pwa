@@ -17,9 +17,9 @@ export class WebAudioPitchAdapter implements AudioPitchPort {
   private readonly minFreq = 62;
   private readonly maxFreq = 1250;
 
-  // Balanced RMS silence threshold & solid digital preamp gain
-  private silenceThresholdRms = 0.0018;
-  private inputGainMultiplier = 3.0;
+  // Balanced RMS silence threshold & digital preamp gain to reject ambient room noise
+  private silenceThresholdRms = 0.0045;
+  private inputGainMultiplier = 2.0;
 
   public setSensitivityThreshold(threshold: number): void {
     this.silenceThresholdRms = Math.max(0.0006, threshold);
@@ -224,8 +224,8 @@ export class WebAudioPitchAdapter implements AudioPitchPort {
       }
     }
 
-    // Correlation confidence threshold (calibrated for acoustic piano treble strings)
-    if (maxOverallCorr < 0.38) {
+    // Strict correlation confidence threshold (68%) so ambient noise is never mistaken for a played piano note
+    if (maxOverallCorr < 0.68) {
       return {
         frequency: 0,
         solfegeName: '',
@@ -237,15 +237,14 @@ export class WebAudioPitchAdapter implements AudioPitchPort {
         isPitched: false,
         audioState,
         sampleRate,
-        debugMessage: `Bruit ambiant (Confiance ${Math.round(maxOverallCorr * 100)}% < 38%)`,
+        debugMessage: `Bruit ambiant (Confiance ${Math.round(maxOverallCorr * 100)}% < 68%)`,
       };
     }
 
     // 3. Find the fundamental period T0 using McLeod First Prominent Peak with harmonic/subharmonic verification:
-    // - Wait for correlation to descend from lag 0 (or cross below peakThreshold)
-    // - Pick the first local peak >= max(0.38, 0.62 * maxOverallCorr) so Do 4 is never skipped in favor of subharmonic Do 3
-    // - Verify it is not a 2nd-harmonic half-period peak (where corr[2*lag] is significantly higher than corr[lag])
-    const peakThreshold = Math.max(0.38, maxOverallCorr * 0.62);
+    // - Pick the first local peak >= max(0.55, 0.62 * maxOverallCorr) so Do 4 is never skipped in favor of subharmonic Do 3
+    // - Verify it is not a 2nd-harmonic half-period peak (where corr[2*lag] is higher than corr[lag])
+    const peakThreshold = Math.max(0.55, maxOverallCorr * 0.62);
     let bestLag = -1;
 
     for (let lag = minLag + 1; lag < maxLag; lag++) {
@@ -265,8 +264,8 @@ export class WebAudioPitchAdapter implements AudioPitchPort {
             }
           }
 
-          if (maxDoubleCorr - corr[lag] > 0.14) {
-            // `lag` is a 2nd harmonic overtone; continue to true fundamental at 2*lag
+          if (maxDoubleCorr - corr[lag] > 0.12) {
+            // `lag` is a 2nd harmonic overtone (e.g. La 5 harmonic of a played La 4); continue to true fundamental at 2*lag
             continue;
           }
 
