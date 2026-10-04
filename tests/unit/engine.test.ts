@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { PracticeEngine } from '../../src/core/engine/PracticeEngine.ts';
 import { PartitionPiece } from '../../src/core/models/music.types.ts';
 import { PitchResult } from '../../src/core/models/pitch.types.ts';
@@ -8,11 +8,15 @@ describe('PracticeEngine Unit Tests (Core Domain)', () => {
   let testPiece: PartitionPiece;
 
   beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+
     engine = new PracticeEngine();
 
     testPiece = {
       id: 'test-piece',
       category: 'landmarks',
+      mode: 'rythme',
       levelNumber: 1,
       title: 'Do-Ré-Mi Initiation',
       difficulty: 'Débutant',
@@ -32,14 +36,28 @@ describe('PracticeEngine Unit Tests (Core Domain)', () => {
     engine.loadPartition(testPiece);
   });
 
-  it('should initialize at index 0 targeting Do 4', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('should initialize at index 0 targeting Do 4 and support tempo clamping', () => {
     expect(engine.getCurrentIndex()).toBe(0);
     expect(engine.getCurrentTargetNote()?.solfegePitch).toBe('Do 4');
     expect(engine.getTotalNotes()).toBe(3);
     expect(engine.isCompleted()).toBe(false);
+    expect(engine.getAccuracyPercentage()).toBe(100);
+    expect(engine.getExpectedNextNoteIntervalMs()).toBe(0);
+    expect(engine.getPartition()?.id).toBe('test-piece');
+
+    engine.setTempoBpm(10);
+    expect(engine.getTempoBpm()).toBe(30);
+    engine.setTempoBpm(300);
+    expect(engine.getTempoBpm()).toBe(220);
+    engine.setTempoBpm(80);
+    expect(engine.getTempoBpm()).toBe(80);
   });
 
-  it('should require 2 consecutive frames before advancing to eliminate transient noise', () => {
+  it('should require 2 consecutive frames with stable cents before advancing', () => {
     const do4Pitch: PitchResult = {
       frequency: 261.63,
       solfegeName: 'Do',
@@ -56,11 +74,17 @@ describe('PracticeEngine Unit Tests (Core Domain)', () => {
     expect(eval1.status).toBe('IGNORED');
     expect(engine.getCurrentIndex()).toBe(0);
 
-    // Frame 2: Confirmed hit
-    const eval2 = engine.processDetectedPitch(do4Pitch);
+    // Unstable cents drift (> 25 cents) resets to 1 consecutive frame
+    const driftedDo4: PitchResult = { ...do4Pitch, cents: 35 };
+    expect(engine.processDetectedPitch(driftedDo4).status).toBe('IGNORED');
+    expect(engine.getCurrentIndex()).toBe(0);
+
+    // Frame 2 with stable cents: Confirmed hit
+    const eval2 = engine.processDetectedPitch({ ...do4Pitch, cents: 30 });
     expect(eval2.status).toBe('MATCH');
     expect(engine.getCurrentIndex()).toBe(1);
     expect(engine.getCurrentTargetNote()?.solfegePitch).toBe('Ré 4');
+    expect(engine.getExpectedNextNoteIntervalMs()).toBe(750);
   });
 
   it('should flag wrong note as MISMATCH and not advance cursor', () => {
@@ -79,9 +103,12 @@ describe('PracticeEngine Unit Tests (Core Domain)', () => {
     expect(evalResult.status).toBe('MISMATCH');
     expect(engine.getCurrentIndex()).toBe(0);
     expect(engine.getCurrentTargetNote()?.solfegePitch).toBe('Do 4');
+    expect(engine.getTotalAttempts()).toBe(1);
+    expect(engine.getCorrectAttempts()).toBe(0);
+    expect(engine.getAccuracyPercentage()).toBe(0);
   });
 
-  it('should enforce 500ms refractory lockout to prevent piano string resonance from double-triggering', async () => {
+  it('should enforce 500ms refractory lockout to prevent piano string resonance from double-triggering', () => {
     const do4: PitchResult = { frequency: 261.63, solfegeName: 'Do', octave: 4, midi: 60, cents: 0, confidence: 0.95, rms: 0.05, isPitched: true };
     const re4: PitchResult = { frequency: 293.66, solfegeName: 'Ré', octave: 4, midi: 62, cents: 0, confidence: 0.95, rms: 0.05, isPitched: true };
 
@@ -91,12 +118,13 @@ describe('PracticeEngine Unit Tests (Core Domain)', () => {
     expect(engine.getCurrentIndex()).toBe(1);
 
     // Immediate next note within lockout period (< 500ms) should be ignored
+    vi.advanceTimersByTime(499);
     const immediate = engine.processDetectedPitch(re4);
     expect(immediate.status).toBe('IGNORED');
     expect(engine.getCurrentIndex()).toBe(1);
 
-    // Wait for lockout to expire
-    await new Promise((resolve) => setTimeout(resolve, 550));
+    // Advance past 500ms lockout
+    vi.advanceTimersByTime(2);
 
     // Now Ré 4 is accepted (2 frames)
     engine.processDetectedPitch(re4);
@@ -105,7 +133,7 @@ describe('PracticeEngine Unit Tests (Core Domain)', () => {
     expect(engine.getCurrentIndex()).toBe(2);
   });
 
-  it('should mark partition as complete when all notes are successfully matched', async () => {
+  it('should mark partition as complete when all notes are successfully matched', () => {
     const do4: PitchResult = { frequency: 261.63, solfegeName: 'Do', octave: 4, midi: 60, cents: 0, confidence: 0.95, rms: 0.05, isPitched: true };
     const re4: PitchResult = { frequency: 293.66, solfegeName: 'Ré', octave: 4, midi: 62, cents: 0, confidence: 0.95, rms: 0.05, isPitched: true };
     const mi4: PitchResult = { frequency: 329.63, solfegeName: 'Mi', octave: 4, midi: 64, cents: 0, confidence: 0.95, rms: 0.05, isPitched: true };
@@ -113,12 +141,12 @@ describe('PracticeEngine Unit Tests (Core Domain)', () => {
     // Note 1: Do 4
     engine.processDetectedPitch(do4);
     engine.processDetectedPitch(do4);
-    await new Promise((r) => setTimeout(r, 520));
+    vi.advanceTimersByTime(750);
 
     // Note 2: Ré 4
     engine.processDetectedPitch(re4);
     engine.processDetectedPitch(re4);
-    await new Promise((r) => setTimeout(r, 520));
+    vi.advanceTimersByTime(750);
 
     // Note 3: Mi 4
     engine.processDetectedPitch(mi4);
@@ -126,10 +154,15 @@ describe('PracticeEngine Unit Tests (Core Domain)', () => {
 
     expect(engine.isCompleted()).toBe(true);
     expect(engine.getCurrentIndex()).toBe(3);
+    expect(engine.getCurrentTargetNote()).toBeNull();
     expect(engine.getAccuracyPercentage()).toBe(100);
+    expect(engine.getElapsedTimeSeconds()).toBe(1);
+
+    // Further pitches after completion are ignored
+    expect(engine.processDetectedPitch(mi4).status).toBe('IGNORED');
   });
 
-  it('should NOT turn La 5 green from the decaying harmonic of a previously played La 4 unless La 5 is genuinely struck', async () => {
+  it('should NOT turn La 5 green from the decaying harmonic of a previously played La 4 unless La 5 is genuinely struck', () => {
     const octavePiece: PartitionPiece = {
       ...testPiece,
       notes: [
@@ -156,8 +189,8 @@ describe('PracticeEngine Unit Tests (Core Domain)', () => {
     expect(match1.status).toBe('MATCH');
     expect(engine.getCurrentIndex()).toBe(1); // Now targeting La 5 (MIDI 81)
 
-    // Wait past 500ms refractory lockout while the La 4 string is still decaying
-    await new Promise((r) => setTimeout(r, 530));
+    // Advance past 500ms refractory lockout while the La 4 string is still decaying
+    vi.advanceTimersByTime(550);
 
     // 2. Decaying La 4 fundamental (MIDI 69) or decaying 2nd harmonic La 5 (MIDI 81) with lower/decaying RMS
     const decayingLa4: PitchResult = { ...la4Strike, rms: 0.04 };
@@ -175,7 +208,6 @@ describe('PracticeEngine Unit Tests (Core Domain)', () => {
     expect(engine.processDetectedPitch(decayingLa4).status).toBe('IGNORED');
     expect(engine.processDetectedPitch(decayingLa5Harmonic).status).toBe('IGNORED');
     expect(engine.processDetectedPitch(decayingLa5Harmonic).status).toBe('IGNORED');
-    // Cursor must still be on La 5 (index 1), NOT completed!
     expect(engine.getCurrentIndex()).toBe(1);
     expect(engine.isCompleted()).toBe(false);
 
@@ -190,8 +222,22 @@ describe('PracticeEngine Unit Tests (Core Domain)', () => {
     expect(engine.isCompleted()).toBe(true);
   });
 
-  it('should ignore low-confidence ambient room noise when nothing is played on the piano', () => {
-    const ambientNoise: PitchResult = {
+  it('should ignore null, unpitched, low-confidence, or low-RMS ambient noise', () => {
+    expect(engine.processDetectedPitch(null).status).toBe('IGNORED');
+
+    const unpitched: PitchResult = {
+      frequency: 0,
+      solfegeName: 'Do',
+      octave: 4,
+      midi: 60,
+      cents: 0,
+      confidence: 0.9,
+      rms: 0.05,
+      isPitched: false,
+    };
+    expect(engine.processDetectedPitch(unpitched).status).toBe('IGNORED');
+
+    const lowConfidence: PitchResult = {
       frequency: 261.63,
       solfegeName: 'Do',
       octave: 4,
@@ -201,14 +247,31 @@ describe('PracticeEngine Unit Tests (Core Domain)', () => {
       rms: 0.01,
       isPitched: true,
     };
+    expect(engine.processDetectedPitch(lowConfidence).status).toBe('IGNORED');
 
-    expect(engine.processDetectedPitch(ambientNoise).status).toBe('IGNORED');
-    expect(engine.processDetectedPitch(ambientNoise).status).toBe('IGNORED');
+    const lowRms: PitchResult = {
+      ...lowConfidence,
+      confidence: 0.9,
+      rms: 0.001, // Below 0.004 RMS threshold
+    };
+    expect(engine.processDetectedPitch(lowRms).status).toBe('IGNORED');
     expect(engine.getCurrentIndex()).toBe(0);
   });
 
-  it('should start performance evaluation when the 1st note is played and compute end-of-level Pitch & Rhythm grading', async () => {
-    // At 80 BPM, 1 quarter note beat = 750ms (tolerance = max(280, 0.35 * 750) = 280ms, so 470ms..1030ms is on_time)
+  it('should evaluate early, on_time, and late rhythm timing and compute grade labels', () => {
+    // Use 60 BPM with a half note (2000ms expected, tolerance = 700ms -> on_time window is 1300ms..2700ms)
+    const rhythmPiece: PartitionPiece = {
+      ...testPiece,
+      mode: 'rythme',
+      tempo: 60,
+      notes: [
+        { id: '1', solfegePitch: 'Do 4', midi: 60, step: 'Do', octave: 4, duration: 'half' },
+        { id: '2', solfegePitch: 'Ré 4', midi: 62, step: 'Ré', octave: 4, duration: 'quarter' },
+        { id: '3', solfegePitch: 'Mi 4', midi: 64, step: 'Mi', octave: 4, duration: 'quarter' },
+      ],
+    };
+    engine.loadPartition(rhythmPiece);
+
     const do4: PitchResult = { frequency: 261.63, solfegeName: 'Do', octave: 4, midi: 60, cents: 0, confidence: 0.95, rms: 0.05, isPitched: true };
     const re4: PitchResult = { frequency: 293.66, solfegeName: 'Ré', octave: 4, midi: 62, cents: 0, confidence: 0.95, rms: 0.05, isPitched: true };
     const mi4: PitchResult = { frequency: 329.63, solfegeName: 'Mi', octave: 4, midi: 64, cents: 0, confidence: 0.95, rms: 0.05, isPitched: true };
@@ -217,32 +280,67 @@ describe('PracticeEngine Unit Tests (Core Domain)', () => {
     expect(engine.hasPerformanceStarted()).toBe(false);
     expect(engine.getElapsedTimeSeconds()).toBe(0);
 
-    // 1. Play Note 1 (Do 4) cleanly -> starts evaluation!
+    // 1. Play Note 1 (Do 4, half note = 2000ms) -> starts evaluation, always on_time
     engine.processDetectedPitch(do4);
     engine.processDetectedPitch(do4);
     expect(engine.hasPerformanceStarted()).toBe(true);
+    expect(engine.getLastMatchTimeMs()).toBeGreaterThan(0);
 
-    // 2. Wait ~650ms (on-time for 80 BPM quarter note = 750ms) and play Note 2 (Ré 4) cleanly
-    await new Promise((r) => setTimeout(r, 650));
+    // 2. Play Note 2 (Ré 4) after only 600ms (< 2000 - 700 = 1300ms) -> 'early'
+    vi.advanceTimersByTime(600);
     engine.processDetectedPitch(re4);
     engine.processDetectedPitch(re4);
 
-    // 3. Wait ~1150ms (too late for 80 BPM quarter note > 750 + 280 = 1030ms), hit wrong note Fa 4 first, then play Mi 4
-    await new Promise((r) => setTimeout(r, 1150));
-    engine.processDetectedPitch(wrongFa4); // Wrong key strike on Note 3
+    // 3. Play Note 3 (Mi 4) after 1600ms (> 1000 + 350 = 1350ms) -> 'late', with a wrong note first
+    vi.advanceTimersByTime(1600);
+    engine.processDetectedPitch(wrongFa4);
     engine.processDetectedPitch(mi4);
     engine.processDetectedPitch(mi4);
 
     expect(engine.isCompleted()).toBe(true);
+    const records = engine.getNoteRecords();
+    expect(records).toHaveLength(3);
+    expect(records[0].rhythmStatus).toBe('on_time');
+    expect(records[1].rhythmStatus).toBe('early');
+    expect(records[2].rhythmStatus).toBe('late');
+    expect(records[2].pitchCorrectFirstTry).toBe(false);
+
     const grade = engine.getGradeSummary();
     expect(grade.totalNotes).toBe(3);
-    expect(grade.correctPitchNotesCount).toBe(2); // Notes 1 & 2 clean, Note 3 had wrongFa4
-    expect(grade.onTimeRhythmNotesCount).toBe(2); // Notes 1 & 2 on_time, Note 3 late
-    expect(grade.noteRecords[0].pitchCorrectFirstTry).toBe(true);
-    expect(grade.noteRecords[0].rhythmStatus).toBe('on_time');
-    expect(grade.noteRecords[1].pitchCorrectFirstTry).toBe(true);
-    expect(grade.noteRecords[1].rhythmStatus).toBe('on_time');
-    expect(grade.noteRecords[2].pitchCorrectFirstTry).toBe(false);
-    expect(grade.noteRecords[2].rhythmStatus).toBe('late');
+    expect(grade.correctPitchNotesCount).toBe(2); // 67%
+    expect(grade.onTimeRhythmNotesCount).toBe(1);   // 33%
+    expect(grade.pitchScorePercent).toBe(67);
+    expect(grade.rhythmScorePercent).toBe(33);
+    expect(grade.overallScorePercent).toBe(53); // 67 * 0.6 + 33 * 0.4 = 53.4 -> 53
+    expect(grade.gradeLabel).toBe('À retravailler');
+  });
+
+  it('should compute Lecture mode grading (100% pitch weight) and handle empty partitions', () => {
+    const emptyEngine = new PracticeEngine();
+    expect(emptyEngine.getGradeSummary().overallScorePercent).toBe(100);
+
+    const lecturePiece: PartitionPiece = {
+      ...testPiece,
+      mode: 'lecture',
+    };
+    engine.loadPartition(lecturePiece);
+
+    const do4: PitchResult = { frequency: 261.63, solfegeName: 'Do', octave: 4, midi: 60, cents: 0, confidence: 0.95, rms: 0.05, isPitched: true };
+    const re4: PitchResult = { frequency: 293.66, solfegeName: 'Ré', octave: 4, midi: 62, cents: 0, confidence: 0.95, rms: 0.05, isPitched: true };
+    const mi4: PitchResult = { frequency: 329.63, solfegeName: 'Mi', octave: 4, midi: 64, cents: 0, confidence: 0.95, rms: 0.05, isPitched: true };
+
+    engine.processDetectedPitch(do4);
+    engine.processDetectedPitch(do4);
+    vi.advanceTimersByTime(3000); // Even if slow in Lecture mode, overallScorePercent is 100% pitch!
+    engine.processDetectedPitch(re4);
+    engine.processDetectedPitch(re4);
+    vi.advanceTimersByTime(3000);
+    engine.processDetectedPitch(mi4);
+    engine.processDetectedPitch(mi4);
+
+    const summary = engine.getGradeSummary();
+    expect(summary.pitchScorePercent).toBe(100);
+    expect(summary.overallScorePercent).toBe(100);
+    expect(summary.gradeLabel).toBe('Excellent');
   });
 });

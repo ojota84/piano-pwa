@@ -8,7 +8,7 @@ on:
 
 jobs:
   build-and-test:
-    name: Build & Test
+    name: Build, Lint & Mutation Test
     runs-on: ubuntu-latest
 
     steps:
@@ -29,6 +29,9 @@ jobs:
 
       - name: Run unit & architecture tests (Vitest)
         run: npm test
+
+      - name: Run mutation testing (Stryker)
+        run: npm run test:mutation
 
       - name: Build production bundle (Vite)
         run: npm run build

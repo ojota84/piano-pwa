@@ -14,7 +14,9 @@ export interface StaffViewProps {
   mode?: LessonMode;
   timeSignature?: [number, number];
   noteRecords?: NotePerformanceRecord[];
-  beatProgress?: number; // 0.0 to 1.0+ live rhythm progress toward striking the current target note
+  beatProgress?: number;     // 0.0 to 1.0+ progress toward the strike moment of the active note
+  preStartBeatProgress?: number; // 0.0 to 1.0 beat sweep on Note 1 before performance starts
+  currentBeat?: number;      // 1..beatsPerMeasure
   lastMismatch: boolean;
 }
 
@@ -26,25 +28,27 @@ export const StaffView: React.FC<StaffViewProps> = ({
   timeSignature = [4, 4],
   noteRecords = [],
   beatProgress = 0,
+  preStartBeatProgress = 0,
+  currentBeat = 1,
   lastMismatch,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const isRhythmMode = mode === 'rythme';
 
-  // 5 Staff Lines centered at y = 120 to accommodate wide spans (La 3 to Do 6):
-  // Line 5 (Top): y = 80 (staffPos = +4)
-  // Line 4: y = 100 (staffPos = +2)
-  // Line 3 (Middle): y = 120 (staffPos = 0)
-  // Line 2: y = 140 (staffPos = -2)
-  // Line 1 (Bottom): y = 160 (staffPos = -4)
-  const centerY = 120;
-  const staffLineY = [80, 100, 120, 140, 160];
+  // 5 Staff Lines centered at y = 124 to give room above for Beat Ring cue labels and below for Solfège:
+  // Line 5 (Top): y = 84 (staffPos = +4)
+  // Line 4: y = 104 (staffPos = +2)
+  // Line 3 (Middle): y = 124 (staffPos = 0)
+  // Line 2: y = 144 (staffPos = -2)
+  // Line 1 (Bottom): y = 164 (staffPos = -4)
+  const centerY = 124;
+  const staffLineY = [84, 104, 124, 144, 164];
   const stepHeight = 10; // 10px per diatonic step
 
   const startX = 135;
-  const noteSpacing = 74;
+  const noteSpacing = 76;
   const svgWidth = Math.max(540, startX + notes.length * noteSpacing + 60);
-  const svgHeight = 268;
+  const svgHeight = 276;
 
   const measureBarIndices = computeMeasureBarLineIndices(notes, timeSignature);
 
@@ -89,7 +93,7 @@ export const StaffView: React.FC<StaffViewProps> = ({
       >
         <svg
           viewBox={`0 0 ${svgWidth} ${svgHeight}`}
-          className="w-full h-56 sm:h-64"
+          className="w-full h-60 sm:h-68"
           style={{ minWidth: `${svgWidth}px` }}
         >
           <rect x="0" y="0" width={svgWidth} height={svgHeight} fill="#ffffff" />
@@ -109,15 +113,15 @@ export const StaffView: React.FC<StaffViewProps> = ({
           ))}
 
           {/* Start Bar Line & Final Double Bar Line */}
-          <line x1="20" y1="80" x2="20" y2="160" stroke="#0f172a" strokeWidth="2.5" />
-          <line x1={svgWidth - 25} y1="80" x2={svgWidth - 25} y2="160" stroke="#0f172a" strokeWidth="1.5" />
-          <line x1={svgWidth - 20} y1="80" x2={svgWidth - 20} y2="160" stroke="#0f172a" strokeWidth="3.5" />
+          <line x1="20" y1="84" x2="20" y2="164" stroke="#0f172a" strokeWidth="2.5" />
+          <line x1={svgWidth - 25} y1="84" x2={svgWidth - 25} y2="164" stroke="#0f172a" strokeWidth="1.5" />
+          <line x1={svgWidth - 20} y1="84" x2={svgWidth - 20} y2="164" stroke="#0f172a" strokeWidth="3.5" />
 
           {/* Clef Glyphs */}
           {clef === 'treble' ? (
             <text
               x="32"
-              y="156"
+              y="160"
               fontFamily="serif"
               fontSize="84"
               fill="#0f172a"
@@ -128,7 +132,7 @@ export const StaffView: React.FC<StaffViewProps> = ({
           ) : (
             <text
               x="30"
-              y="142"
+              y="146"
               fontFamily="serif"
               fontSize="66"
               fill="#0f172a"
@@ -140,10 +144,10 @@ export const StaffView: React.FC<StaffViewProps> = ({
 
           {/* Dynamic Time Signature (e.g. 4/4 or 3/4) */}
           <g transform="translate(95, 0)">
-            <text x="0" y="115" fontSize="28" fontFamily="serif" fontWeight="700" fill="#0f172a" textAnchor="middle">
+            <text x="0" y="119" fontSize="28" fontFamily="serif" fontWeight="700" fill="#0f172a" textAnchor="middle">
               {timeSignature[0]}
             </text>
-            <text x="0" y="155" fontSize="28" fontFamily="serif" fontWeight="700" fill="#0f172a" textAnchor="middle">
+            <text x="0" y="159" fontSize="28" fontFamily="serif" fontWeight="700" fill="#0f172a" textAnchor="middle">
               {timeSignature[1]}
             </text>
           </g>
@@ -155,9 +159,9 @@ export const StaffView: React.FC<StaffViewProps> = ({
               <line
                 key={`bar-${noteIdx}`}
                 x1={barX}
-                y1="80"
+                y1="84"
                 x2={barX}
-                y2="160"
+                y2="164"
                 stroke="#64748b"
                 strokeWidth="1.5"
               />
@@ -199,8 +203,18 @@ export const StaffView: React.FC<StaffViewProps> = ({
               noteColor = isClean ? '#059669' : '#d97706';
               labelColor = isClean ? '#059669' : '#b45309';
             } else if (isTarget) {
-              // In Rhythm mode, when beatProgress enters the strike window (0.65..1.35), highlight green on the notehead!
-              const inStrikeZone = isRhythmMode && currentIndex > 0 && beatProgress >= 0.65 && beatProgress <= 1.35;
+              // Beat Ring logic directly on the active notehead:
+              // - Before Note 1 (index === 0): sweeps 0..1 on every beat and flashes green at the beat impulse (0..0.25 or 0.85..1.0)
+              // - On Note 2+ (index > 0): sweeps 0..1 over the previous note's duration and turns bright green in the strike window (0.65..1.35)
+              const activeSweep = currentIndex === 0 ? preStartBeatProgress : beatProgress;
+              const inStrikeZone =
+                isRhythmMode &&
+                (currentIndex === 0
+                  ? preStartBeatProgress >= 0.82 || preStartBeatProgress <= 0.22
+                  : beatProgress >= 0.65 && beatProgress <= 1.35);
+
+              const isLate = isRhythmMode && currentIndex > 0 && beatProgress > 1.35;
+
               noteColor = lastMismatch
                 ? '#dc2626'
                 : inStrikeZone
@@ -212,16 +226,41 @@ export const StaffView: React.FC<StaffViewProps> = ({
                 ? '#059669'
                 : '#b45309';
 
-              const ringRadius = 21;
+              const ringRadius = 24;
               const ringCircumference = 2 * Math.PI * ringRadius;
-              const clampedProgress = Math.min(1, Math.max(0, beatProgress));
+              const clampedProgress = Math.min(1, Math.max(0, activeSweep));
+
+              // Compute intuitive cue label directly above the active note on the partition
+              let rhythmCueText = '';
+              if (isRhythmMode) {
+                if (currentIndex === 0) {
+                  rhythmCueText = inStrikeZone ? `● Temps ${currentBeat}` : `Temps ${currentBeat}`;
+                } else {
+                  const prevNote = notes[currentIndex - 1];
+                  const prevBeats = getNoteDurationBeats(prevNote.duration);
+                  if (inStrikeZone) {
+                    rhythmCueText = 'JOUEZ !';
+                  } else if (isLate) {
+                    rhythmCueText = 'Trop tard';
+                  } else if (prevBeats >= 2) {
+                    const currentHoldBeat = Math.min(
+                      prevBeats,
+                      Math.floor(clampedProgress * prevBeats) + 1
+                    );
+                    rhythmCueText = `Tenez ${currentHoldBeat}/${prevBeats}`;
+                  } else {
+                    rhythmCueText = 'Tenez...';
+                  }
+                }
+              }
 
               halo = (
                 <g>
+                  {/* Inner Halo Fill */}
                   <circle
                     cx={x}
                     cy={y}
-                    r="20"
+                    r={isRhythmMode ? '21' : '20'}
                     fill={
                       lastMismatch
                         ? '#fee2e2'
@@ -229,21 +268,75 @@ export const StaffView: React.FC<StaffViewProps> = ({
                         ? '#d1fae5'
                         : '#fef3c7'
                     }
-                    opacity="0.85"
+                    opacity="0.9"
                   />
-                  {/* Visual Rhythm Ring around the target note */}
-                  {isRhythmMode && currentIndex > 0 && beatProgress > 0 && (
-                    <circle
-                      cx={x}
-                      cy={y}
-                      r={ringRadius}
-                      fill="none"
-                      stroke={inStrikeZone ? '#059669' : beatProgress > 1.35 ? '#dc2626' : '#f59e0b'}
-                      strokeWidth="3"
-                      strokeDasharray={ringCircumference}
-                      strokeDashoffset={ringCircumference * (1 - clampedProgress)}
-                      transform={`rotate(-90 ${x} ${y})`}
-                    />
+
+                  {/* Beat Ring Track & Animated Sweep directly on the Active Note */}
+                  {isRhythmMode && (
+                    <>
+                      {/* Background track ring */}
+                      <circle
+                        cx={x}
+                        cy={y}
+                        r={ringRadius}
+                        fill="none"
+                        stroke="#e2e8f0"
+                        strokeWidth="5"
+                      />
+                      {/* Green Target Strike Zone Arc (65% to 100% of the ring) */}
+                      {currentIndex > 0 && (
+                        <circle
+                          cx={x}
+                          cy={y}
+                          r={ringRadius}
+                          fill="none"
+                          stroke="#a7f3d0"
+                          strokeWidth="5"
+                          strokeDasharray={`${ringCircumference * 0.35} ${ringCircumference * 0.65}`}
+                          strokeDashoffset={-ringCircumference * 0.65}
+                          transform={`rotate(-90 ${x} ${y})`}
+                        />
+                      )}
+                      {/* Live Animated Beat Ring Progress */}
+                      <circle
+                        cx={x}
+                        cy={y}
+                        r={ringRadius}
+                        fill="none"
+                        stroke={
+                          lastMismatch
+                            ? '#dc2626'
+                            : inStrikeZone
+                            ? '#059669'
+                            : isLate
+                            ? '#f43f5e'
+                            : '#f59e0b'
+                        }
+                        strokeWidth="5"
+                        strokeLinecap="round"
+                        strokeDasharray={ringCircumference}
+                        strokeDashoffset={ringCircumference * (1 - clampedProgress)}
+                        transform={`rotate(-90 ${x} ${y})`}
+                      />
+                      {/* Direct Action Cue Text right above the active note */}
+                      <text
+                        x={x}
+                        y={Math.min(34, y - 32)}
+                        textAnchor="middle"
+                        fontSize="11"
+                        fontWeight="800"
+                        fill={
+                          inStrikeZone
+                            ? '#059669'
+                            : isLate
+                            ? '#e11d48'
+                            : '#d97706'
+                        }
+                        className="font-sans select-none"
+                      >
+                        {rhythmCueText}
+                      </text>
+                    </>
                   )}
                 </g>
               );
@@ -334,7 +427,7 @@ export const StaffView: React.FC<StaffViewProps> = ({
                 {/* Solfège Pitch Label */}
                 <text
                   x={x}
-                  y={isRhythmMode ? 238 : 244}
+                  y={isRhythmMode ? 244 : 250}
                   textAnchor="middle"
                   fontSize={isTarget ? '15' : '13'}
                   fontWeight={isTarget ? '700' : '500'}
@@ -348,10 +441,10 @@ export const StaffView: React.FC<StaffViewProps> = ({
                 {isRhythmMode && (
                   <text
                     x={x}
-                    y={254}
+                    y={260}
                     textAnchor="middle"
                     fontSize="10"
-                    fontWeight="500"
+                    fontWeight="600"
                     fill={
                       isCompleted && record
                         ? record.rhythmStatus === 'on_time'
@@ -367,11 +460,11 @@ export const StaffView: React.FC<StaffViewProps> = ({
                   </text>
                 )}
 
-                {/* Fingering hint */}
-                {note.finger && (
+                {/* Fingering hint (when not covered by rhythm cue) */}
+                {note.finger && !isRhythmMode && (
                   <text
                     x={x}
-                    y={20}
+                    y={22}
                     textAnchor="middle"
                     fontSize="11"
                     fontWeight="600"

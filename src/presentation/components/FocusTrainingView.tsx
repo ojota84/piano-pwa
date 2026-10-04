@@ -59,70 +59,75 @@ export const FocusTrainingView: React.FC<FocusTrainingViewProps> = ({
   const targetNote = level.notes[currentIndex] || level.notes[0];
   const isTreble = level.clef === 'treble';
 
-  // Lesson mode defaults to piece's mode ('lecture' or 'rythme'), with ability to switch
   const [activeMode, setActiveMode] = useState<LessonMode>(level.mode || 'lecture');
   const [rhythmPulseActive, setRhythmPulseActive] = useState<boolean>(true);
   const [currentBeat, setCurrentBeat] = useState<number>(1);
-  const [tickFlash, setTickFlash] = useState<boolean>(false);
+  const [preStartBeatProgress, setPreStartBeatProgress] = useState<number>(0);
   const [beatProgress, setBeatProgress] = useState<number>(0);
   const [liveStopwatchSec, setLiveStopwatchSec] = useState<number>(0);
 
   const isRhythmMode = activeMode === 'rythme';
   const beatsPerMeasure = level.timeSignature[0] || 4;
 
-  // Reset all visual timers, stopwatch, and beat progress on level change OR Rejouer (runId)
+  // Reset all visual timers, stopwatch, and beat ring on level change OR Rejouer (runId)
   useEffect(() => {
     setActiveMode(level.mode || 'lecture');
     setCurrentBeat(1);
+    setPreStartBeatProgress(0);
     setBeatProgress(0);
     setLiveStopwatchSec(0);
   }, [level.id, level.mode, runId]);
 
-  // Continuous Silent Visual Tick (resynchronizes to Note 1 when performance starts!)
+  // Smooth 30ms animation loop driving the Beat Ring on the Active Note & Stopwatch
   useEffect(() => {
-    if (!isRhythmMode || !rhythmPulseActive || isCompleted) return;
-    const intervalMs = Math.round(60000 / Math.max(30, Math.min(200, tempoBpm)));
-    setCurrentBeat(1);
-    setTickFlash(true);
-    const flashTimeout = setTimeout(() => setTickFlash(false), 120);
+    if (isCompleted) return;
 
-    const timer = setInterval(() => {
-      setCurrentBeat((prev) => (prev % beatsPerMeasure) + 1);
-      setTickFlash(true);
-      setTimeout(() => setTickFlash(false), 120);
-    }, intervalMs);
+    const beatDurationMs = 60000 / Math.max(30, Math.min(200, tempoBpm));
+    const loopOriginMs = hasPerformanceStarted && lastMatchTimeMs > 0 ? lastMatchTimeMs : Date.now();
+    const startStopwatchAnchorMs = Date.now() - elapsedSeconds * 1000;
 
-    return () => {
-      clearTimeout(flashTimeout);
-      clearInterval(timer);
-    };
-  }, [isRhythmMode, rhythmPulseActive, isCompleted, tempoBpm, beatsPerMeasure, hasPerformanceStarted, runId]);
-
-  // High-resolution 50ms loop for the live Stopwatch & Rhythm Strike Progress Bar
-  useEffect(() => {
-    if (!hasPerformanceStarted || isCompleted || lastMatchTimeMs === 0) {
-      setBeatProgress(0);
-      if (!hasPerformanceStarted) {
-        setLiveStopwatchSec(0);
-      }
-      return;
-    }
-
-    const startAnchorMs = Date.now() - elapsedSeconds * 1000;
     const interval = setInterval(() => {
       const now = Date.now();
-      setLiveStopwatchSec(Math.max(0, Math.floor((now - startAnchorMs) / 1000)));
 
-      if (expectedIntervalMs > 0) {
-        const elapsedSinceLastNote = now - lastMatchTimeMs;
-        setBeatProgress(elapsedSinceLastNote / expectedIntervalMs);
+      // 1. Pre-start & continuous beat ring sweep (for Note 1 & measure beat counter)
+      if (isRhythmMode && rhythmPulseActive) {
+        const elapsedFromOrigin = Math.max(0, now - loopOriginMs);
+        const totalBeatsElapsed = elapsedFromOrigin / beatDurationMs;
+        const beatInMeasure = (Math.floor(totalBeatsElapsed) % beatsPerMeasure) + 1;
+        const withinBeatFraction = totalBeatsElapsed - Math.floor(totalBeatsElapsed);
+
+        setCurrentBeat(beatInMeasure);
+        setPreStartBeatProgress(withinBeatFraction);
       } else {
+        setPreStartBeatProgress(0);
+      }
+
+      // 2. Post-Note-1 Stopwatch & Per-Note Beat Ring Progress
+      if (hasPerformanceStarted && lastMatchTimeMs > 0) {
+        setLiveStopwatchSec(Math.max(0, Math.floor((now - startStopwatchAnchorMs) / 1000)));
+        if (expectedIntervalMs > 0) {
+          setBeatProgress((now - lastMatchTimeMs) / expectedIntervalMs);
+        } else {
+          setBeatProgress(0);
+        }
+      } else {
+        setLiveStopwatchSec(0);
         setBeatProgress(0);
       }
-    }, 50);
+    }, 30);
 
     return () => clearInterval(interval);
-  }, [hasPerformanceStarted, isCompleted, lastMatchTimeMs, expectedIntervalMs, runId]);
+  }, [
+    isCompleted,
+    isRhythmMode,
+    rhythmPulseActive,
+    tempoBpm,
+    beatsPerMeasure,
+    hasPerformanceStarted,
+    lastMatchTimeMs,
+    expectedIntervalMs,
+    runId,
+  ]);
 
   // Allow pressing Enter when level is completed to immediately launch the proposed next level
   useEffect(() => {
@@ -138,7 +143,6 @@ export const FocusTrainingView: React.FC<FocusTrainingViewProps> = ({
   }, [isCompleted, nextLevel, onSelectNextLevel]);
 
   const displayedSeconds = isCompleted ? elapsedSeconds : liveStopwatchSec;
-  const inStrikeWindow = isRhythmMode && hasPerformanceStarted && currentIndex > 0 && beatProgress >= 0.65 && beatProgress <= 1.35;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
@@ -209,7 +213,6 @@ export const FocusTrainingView: React.FC<FocusTrainingViewProps> = ({
         {/* End-of-Level Grading & Next-Level Proposal */}
         {isCompleted && (
           <div className="py-5 px-5 bg-slate-900/90 border-l-2 border-emerald-400 flex flex-col gap-4">
-            {/* Top row: Grade Summary + Primary Actions */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div className="flex flex-col gap-1">
                 <div className="flex flex-wrap items-center gap-3">
@@ -323,138 +326,67 @@ export const FocusTrainingView: React.FC<FocusTrainingViewProps> = ({
           </div>
         )}
 
-        {/* Status & Stopwatch / Rhythm Guidance Bar */}
-        <div className="flex flex-col gap-2">
-          <div className="flex flex-wrap items-center justify-between gap-4 text-xs text-slate-400">
-            <div className="flex items-center gap-3">
-              {!isCompleted && (
-                <span className={hasPerformanceStarted ? 'text-emerald-400 font-medium' : 'text-slate-400'}>
-                  {hasPerformanceStarted
-                    ? `Note ${currentIndex + 1}/${level.notes.length} · ⏱ ${displayedSeconds}s`
-                    : `Jouez la 1ère note (${level.notes[0]?.solfegePitch}) pour démarrer le chrono`}
-                </span>
-              )}
-
-              {isRhythmMode && (
-                <>
-                  <span className="text-slate-800">·</span>
-                  <span>
-                    Durée :{' '}
-                    <strong className="text-amber-400 font-medium">
-                      {getNoteDurationLabel(targetNote.duration)}
-                    </strong>
-                  </span>
-                </>
-              )}
-            </div>
-
-            {/* Right: Mode indicator or Rhythm Metronome Controls */}
-            {isRhythmMode ? (
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2" title="Pulsation visuelle continue">
-                  <span
-                    className={`w-2 h-2 rounded-full transition-opacity duration-75 ${
-                      rhythmPulseActive && tickFlash
-                        ? currentBeat === 1
-                          ? 'bg-amber-400 opacity-100'
-                          : 'bg-emerald-400 opacity-100'
-                        : 'bg-slate-700 opacity-40'
-                    }`}
-                  />
-                  {Array.from({ length: beatsPerMeasure }, (_, idx) => {
-                    const beatNum = idx + 1;
-                    const isActiveBeat = rhythmPulseActive && currentBeat === beatNum;
-                    return (
-                      <span
-                        key={beatNum}
-                        className={`w-4 text-center font-mono text-[11px] transition-colors ${
-                          isActiveBeat
-                            ? beatNum === 1
-                              ? 'text-amber-400 font-bold underline underline-offset-4'
-                              : 'text-emerald-400 font-bold underline underline-offset-4'
-                            : 'text-slate-600'
-                        }`}
-                      >
-                        {beatNum}
-                      </span>
-                    );
-                  })}
-                </div>
-
-                <div className="flex items-center gap-1.5 font-mono">
-                  <button
-                    onClick={() => onSetTempoBpm(Math.max(40, tempoBpm - 5))}
-                    className="text-slate-500 hover:text-slate-200 px-1 cursor-pointer"
-                    title="Ralentir le tempo"
-                  >
-                    −
-                  </button>
-                  <button
-                    onClick={() => setRhythmPulseActive((a) => !a)}
-                    className={`cursor-pointer transition-colors tabular-nums ${
-                      rhythmPulseActive ? 'text-slate-300' : 'text-slate-600 line-through'
-                    }`}
-                    title="Activer/Désactiver le tick visuel"
-                  >
-                    {tempoBpm} BPM
-                  </button>
-                  <button
-                    onClick={() => onSetTempoBpm(Math.min(160, tempoBpm + 5))}
-                    className="text-slate-500 hover:text-slate-200 px-1 cursor-pointer"
-                    title="Accélérer le tempo"
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <span className="text-slate-500">
-                Mode Lecture · Sans contrainte de rythme
+        {/* Status & Stopwatch / Beat Ring Instruction Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-4 text-xs text-slate-400">
+          <div className="flex items-center gap-3">
+            {!isCompleted && (
+              <span className={hasPerformanceStarted ? 'text-emerald-400 font-medium' : 'text-slate-300'}>
+                {hasPerformanceStarted
+                  ? `Note ${currentIndex + 1}/${level.notes.length} · ⏱ ${displayedSeconds}s`
+                  : isRhythmMode
+                  ? `Jouez la 1ère note (${level.notes[0]?.solfegePitch}) quand l'anneau sur la note passe au vert`
+                  : `Jouez la 1ère note (${level.notes[0]?.solfegePitch}) pour démarrer le chrono`}
               </span>
+            )}
+
+            {isRhythmMode && !isCompleted && (
+              <>
+                <span className="text-slate-800">·</span>
+                <span>
+                  Valeur :{' '}
+                  <strong className="text-amber-400 font-medium">
+                    {getNoteDurationLabel(targetNote.duration)}
+                  </strong>
+                </span>
+              </>
             )}
           </div>
 
-          {/* Intuitive Live Rhythm Strike Bar (shown in Rythme mode once Note 1 is played) */}
-          {isRhythmMode && hasPerformanceStarted && !isCompleted && currentIndex > 0 && (
-            <div className="flex items-center gap-3">
-              <div className="flex-1 h-1.5 bg-slate-900 relative overflow-hidden">
-                {/* Target green strike window marker (65% to 100%) */}
-                <div
-                  className="absolute top-0 bottom-0 bg-emerald-500/20 border-l border-r border-emerald-500/40"
-                  style={{ left: '65%', width: '35%' }}
-                />
-                {/* Moving progress fill */}
-                <div
-                  className={`h-full transition-none ${
-                    inStrikeWindow
-                      ? 'bg-emerald-400'
-                      : beatProgress > 1.35
-                      ? 'bg-rose-500'
-                      : 'bg-amber-400'
-                  }`}
-                  style={{ width: `${Math.min(100, Math.round(beatProgress * 100))}%` }}
-                />
-              </div>
-              <span
-                className={`text-[11px] font-mono w-28 text-right shrink-0 ${
-                  inStrikeWindow
-                    ? 'text-emerald-400 font-bold'
-                    : beatProgress > 1.35
-                    ? 'text-rose-400'
-                    : 'text-slate-500'
-                }`}
+          {/* Right: Tempo BPM Control in Rhythm mode */}
+          {isRhythmMode ? (
+            <div className="flex items-center gap-1.5 font-mono">
+              <button
+                onClick={() => onSetTempoBpm(Math.max(40, tempoBpm - 5))}
+                className="text-slate-500 hover:text-slate-200 px-1 cursor-pointer"
+                title="Ralentir le tempo"
               >
-                {inStrikeWindow
-                  ? 'Jouez maintenant !'
-                  : beatProgress > 1.35
-                  ? 'Trop tard'
-                  : 'Tenez la note...'}
-              </span>
+                −
+              </button>
+              <button
+                onClick={() => setRhythmPulseActive((a) => !a)}
+                className={`cursor-pointer transition-colors tabular-nums ${
+                  rhythmPulseActive ? 'text-slate-300' : 'text-slate-600 line-through'
+                }`}
+                title="Activer/Désactiver l'anneau de pulsation"
+              >
+                {tempoBpm} BPM
+              </button>
+              <button
+                onClick={() => onSetTempoBpm(Math.min(160, tempoBpm + 5))}
+                className="text-slate-500 hover:text-slate-200 px-1 cursor-pointer"
+                title="Accélérer le tempo"
+              >
+                +
+              </button>
             </div>
+          ) : (
+            <span className="text-slate-500">
+              Mode Lecture · Sans contrainte de rythme
+            </span>
           )}
         </div>
 
-        {/* Clean Music Sheet Strip */}
+        {/* Clean Music Sheet Strip with Beat Ring directly on the Active Note */}
         <StaffView
           notes={level.notes}
           currentIndex={currentIndex}
@@ -463,6 +395,8 @@ export const FocusTrainingView: React.FC<FocusTrainingViewProps> = ({
           timeSignature={level.timeSignature}
           noteRecords={gradeSummary.noteRecords}
           beatProgress={isRhythmMode && hasPerformanceStarted ? beatProgress : 0}
+          preStartBeatProgress={isRhythmMode && !hasPerformanceStarted ? preStartBeatProgress : 0}
+          currentBeat={currentBeat}
           lastMismatch={lastMismatch}
         />
 

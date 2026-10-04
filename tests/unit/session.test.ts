@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { TrainingSessionCoordinator } from '../../src/core/engine/TrainingSessionCoordinator.ts';
 import { PartitionPiece } from '../../src/core/models/music.types.ts';
 import { PitchResult } from '../../src/core/models/pitch.types.ts';
@@ -31,6 +31,9 @@ describe('TrainingSessionCoordinator Unit Tests (Hub <-> Training & Live Pitch E
   };
 
   beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+
     level1Treble = {
       id: 'level-1-landmarks-treble',
       category: 'landmarks',
@@ -70,10 +73,15 @@ describe('TrainingSessionCoordinator Unit Tests (Hub <-> Training & Live Pitch E
     coordinator = new TrainingSessionCoordinator(level1Treble);
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('should start on the hub screen and ignore note scoring until a training level is entered', () => {
     const initial = coordinator.getSnapshot();
     expect(initial.activeScreen).toBe('hub');
     expect(initial.currentIndex).toBe(0);
+    expect(initial.justCompletedLevel).toBe(false);
 
     // Microphone hears Do 3 while still on Hub
     const result = coordinator.handlePitchDetected(do3Pitch);
@@ -81,24 +89,44 @@ describe('TrainingSessionCoordinator Unit Tests (Hub <-> Training & Live Pitch E
     expect(result.snapshot.currentPitch?.solfegeName).toBe('Do');
     expect(result.snapshot.currentPitch?.octave).toBe(3);
     expect(result.snapshot.currentIndex).toBe(0);
+    expect(result.snapshot.justCompletedLevel).toBe(false);
+
+    // Supports returning to hub, clearing pitch, and setting tempo BPM
+    const startSnap = coordinator.startLevel(level5BassDo3);
+    expect(startSnap.justCompletedLevel).toBe(false);
+    coordinator.handlePitchDetected(fa3Pitch); // trigger mismatch first
+    expect(coordinator.getSnapshot().lastMismatch).toBe(true);
+
+    const tempoSnap = coordinator.setTempoBpm(95);
+    expect(tempoSnap.tempoBpm).toBe(95);
+    expect(tempoSnap.justCompletedLevel).toBe(false);
+
+    const clearSnap = coordinator.clearPitch();
+    expect(clearSnap.currentPitch).toBeNull();
+    expect(clearSnap.justCompletedLevel).toBe(false);
+
+    expect(coordinator.getEngine().getTempoBpm()).toBe(95);
+
+    const hubSnap = coordinator.backToHub();
+    expect(hubSnap.activeScreen).toBe('hub');
+    expect(hubSnap.lastMismatch).toBe(false);
+    expect(hubSnap.justCompletedLevel).toBe(false);
   });
 
   it('should immediately evaluate Do 3 and advance pentagram when entering a training level from the Hub (regression test)', () => {
-    // 1. User is on Hub and clicks to start Level 5 (where target note 0 is Do 3)
     const afterStart = coordinator.startLevel(level5BassDo3);
     expect(afterStart.activeScreen).toBe('training');
     expect(afterStart.selectedPiece.id).toBe('level-5-bass-f3-c3');
     expect(afterStart.currentIndex).toBe(0);
 
-    // 2. User strikes Do 3 on the piano (2 consecutive frames required by PracticeEngine)
     const frame1 = coordinator.handlePitchDetected(do3Pitch);
     expect(frame1.snapshot.currentPitch?.solfegeName).toBe('Do');
     expect(frame1.snapshot.currentPitch?.octave).toBe(3);
-    expect(frame1.evaluation.status).toBe('IGNORED'); // Frame 1 of 2
+    expect(frame1.evaluation.status).toBe('IGNORED');
 
     const frame2 = coordinator.handlePitchDetected(do3Pitch);
     expect(frame2.evaluation.status).toBe('MATCH');
-    expect(frame2.snapshot.currentIndex).toBe(1); // Pentagram advances to next note!
+    expect(frame2.snapshot.currentIndex).toBe(1);
     expect(frame2.snapshot.lastMismatch).toBe(false);
   });
 
@@ -115,11 +143,9 @@ describe('TrainingSessionCoordinator Unit Tests (Hub <-> Training & Live Pitch E
   it('should clear red mismatch state as soon as the correct target note Do 3 is matched', () => {
     coordinator.startLevel(level5BassDo3);
 
-    // Play wrong note first -> turns red (lastMismatch = true)
     coordinator.handlePitchDetected(fa3Pitch);
     expect(coordinator.getSnapshot().lastMismatch).toBe(true);
 
-    // Now play target note Do 3 (2 frames) -> turns green & advances cursor
     coordinator.handlePitchDetected(do3Pitch);
     const matched = coordinator.handlePitchDetected(do3Pitch);
     expect(matched.evaluation.status).toBe('MATCH');
@@ -127,7 +153,7 @@ describe('TrainingSessionCoordinator Unit Tests (Hub <-> Training & Live Pitch E
     expect(matched.snapshot.currentIndex).toBe(1);
   });
 
-  it('should mark justCompletedLevel=true when the final note of a training level is matched', async () => {
+  it('should mark justCompletedLevel=true when the final note of a training level is matched', () => {
     coordinator.startLevel(level5BassDo3);
 
     // Match Note 1: Do 3
@@ -135,8 +161,8 @@ describe('TrainingSessionCoordinator Unit Tests (Hub <-> Training & Live Pitch E
     coordinator.handlePitchDetected(do3Pitch);
     expect(coordinator.getSnapshot().currentIndex).toBe(1);
 
-    // Wait for 500ms refractory lockout
-    await new Promise((r) => setTimeout(r, 530));
+    // Advance past 500ms refractory lockout
+    vi.advanceTimersByTime(530);
 
     // Match Note 2: Fa 3
     coordinator.handlePitchDetected(fa3Pitch);
