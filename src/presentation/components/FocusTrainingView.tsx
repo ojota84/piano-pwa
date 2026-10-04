@@ -7,29 +7,29 @@ import { StaffView } from './StaffView.tsx';
 import { AcousticTuner } from './AcousticTuner.tsx';
 
 interface FocusTrainingViewProps {
-  runId: number;
-  level: PartitionPiece;
-  nextLevel: PartitionPiece | null;
-  currentIndex: number;
-  accuracy: number;
-  elapsedSeconds: number;
-  isCompleted: boolean;
-  hasPerformanceStarted: boolean;
-  lastMatchTimeMs: number;
-  expectedIntervalMs: number;
-  tempoBpm: number;
-  gradeSummary: LevelGradeSummary;
-  isListening: boolean;
-  currentPitch: PitchResult | null;
-  lastMismatch: boolean;
-  onBackToHub: () => void;
-  onReset: () => void;
-  onSelectNextLevel: (nextLevel: PartitionPiece) => void;
-  onSetTempoBpm: (bpm: number) => void;
-  onToggleListening: () => void;
-  onResumeAudio: () => void;
-  onSetSensitivity: (val: number) => void;
-  onSetGain: (val: number) => void;
+  readonly runId: number;
+  readonly level: PartitionPiece;
+  readonly nextLevel: PartitionPiece | null;
+  readonly currentIndex: number;
+  readonly accuracy: number;
+  readonly elapsedSeconds: number;
+  readonly isCompleted: boolean;
+  readonly hasPerformanceStarted: boolean;
+  readonly lastMatchTimeMs: number;
+  readonly expectedIntervalMs: number;
+  readonly tempoBpm: number;
+  readonly gradeSummary: Readonly<LevelGradeSummary>;
+  readonly isListening: boolean;
+  readonly currentPitch: PitchResult | null;
+  readonly lastMismatch: boolean;
+  readonly onBackToHub: () => void;
+  readonly onReset: () => void;
+  readonly onSelectNextLevel: (nextLevel: PartitionPiece) => void;
+  readonly onSetTempoBpm: (bpm: number) => void;
+  readonly onToggleListening: () => void;
+  readonly onResumeAudio: () => void;
+  readonly onSetSensitivity: (val: number) => void;
+  readonly onSetGain: (val: number) => void;
 }
 
 export const FocusTrainingView: React.FC<FocusTrainingViewProps> = ({
@@ -59,7 +59,7 @@ export const FocusTrainingView: React.FC<FocusTrainingViewProps> = ({
   const targetNote = level.notes[currentIndex] || level.notes[0];
   const isTreble = level.clef === 'treble';
 
-  const [activeMode, setActiveMode] = useState<LessonMode>(level.mode || 'lecture');
+  const [activeMode, setActiveMode] = useState<LessonMode>(() => level.mode || 'lecture');
   const [rhythmPulseActive, setRhythmPulseActive] = useState<boolean>(true);
   const [currentBeat, setCurrentBeat] = useState<number>(1);
   const [preStartBeatProgress, setPreStartBeatProgress] = useState<number>(0);
@@ -68,15 +68,6 @@ export const FocusTrainingView: React.FC<FocusTrainingViewProps> = ({
 
   const isRhythmMode = activeMode === 'rythme';
   const beatsPerMeasure = level.timeSignature[0] || 4;
-
-  // Reset all visual timers, stopwatch, and beat ring on level change OR Rejouer (runId)
-  useEffect(() => {
-    setActiveMode(level.mode || 'lecture');
-    setCurrentBeat(1);
-    setPreStartBeatProgress(0);
-    setBeatProgress(0);
-    setLiveStopwatchSec(0);
-  }, [level.id, level.mode, runId]);
 
   // Smooth 30ms animation loop driving the Beat Ring on the Active Note & Stopwatch
   useEffect(() => {
@@ -126,6 +117,7 @@ export const FocusTrainingView: React.FC<FocusTrainingViewProps> = ({
     hasPerformanceStarted,
     lastMatchTimeMs,
     expectedIntervalMs,
+    elapsedSeconds,
     runId,
   ]);
 
@@ -142,7 +134,11 @@ export const FocusTrainingView: React.FC<FocusTrainingViewProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isCompleted, nextLevel, onSelectNextLevel]);
 
-  const displayedSeconds = isCompleted ? elapsedSeconds : liveStopwatchSec;
+  const displayedSeconds = isCompleted
+    ? elapsedSeconds
+    : hasPerformanceStarted
+    ? liveStopwatchSec
+    : 0;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">

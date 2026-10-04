@@ -46,16 +46,16 @@ describe('MusicTheory Unit Tests (Core Theory & Rhythm)', () => {
     const expectedChromatics = [
       'Do', 'Do#', 'Ré', 'Ré#', 'Mi', 'Fa', 'Fa#', 'Sol', 'Sol#', 'La', 'La#', 'Si',
     ];
-    for (let i = 0; i < 12; i++) {
+    expectedChromatics.forEach((expectedSolfege, i) => {
       const midi = 60 + i;
       const freq = 440 * Math.pow(2, (midi - 69) / 12);
       const res = frequencyToMidiAndSolfege(freq);
       expect(Object.isFrozen(res)).toBe(true);
       expect(res.midi).toBe(midi);
-      expect(res.solfegeName).toBe(expectedChromatics[i]);
+      expect(res.solfegeName).toBe(expectedSolfege);
       expect(res.octave).toBe(4);
       expect(res.cents).toBe(0);
-    }
+    });
 
     const sharpLa = 440 * Math.pow(2, 15 / 1200);
     expect(frequencyToMidiAndSolfege(sharpLa).cents).toBe(15);

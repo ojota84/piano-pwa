@@ -18,6 +18,14 @@ export const MIN_RMS = 0.004;
 export const MAX_CENTS_DRIFT = 25;
 export const CONSECUTIVE_FRAMES_REQUIRED = 2;
 
+const HARMONIC_SEMITONE_OFFSETS: readonly number[] = Object.freeze([0, 12, 19, 24]);
+
+const GRADE_THRESHOLDS: readonly Readonly<{ min: number; label: GradeLabel }>[] = Object.freeze([
+  Object.freeze({ min: 90, label: 'Excellent' }),
+  Object.freeze({ min: 75, label: 'Très bien' }),
+  Object.freeze({ min: 60, label: 'Bien' }),
+]);
+
 const IGNORED_EVALUATION: Readonly<EvaluationResult> = Object.freeze({
   status: 'IGNORED',
 });
@@ -39,6 +47,16 @@ export interface PracticeEngineState {
   readonly lastMatchedMidi: number | null;
   readonly minRmsSinceMatch: number;
   readonly hasReArticulated: boolean;
+}
+
+/**
+ * Pure higher-order counting function over immutable collections.
+ */
+export function countWhere<T>(
+  items: readonly T[],
+  predicate: (item: T) => boolean
+): number {
+  return items.filter(predicate).length;
 }
 
 /**
@@ -75,8 +93,7 @@ export function isSameOrNaturalHarmonic(
   fundamentalMidi: number,
   candidateMidi: number
 ): boolean {
-  const diff = candidateMidi - fundamentalMidi;
-  return diff === 0 || diff === 12 || diff === 19 || diff === 24;
+  return HARMONIC_SEMITONE_OFFSETS.includes(candidateMidi - fundamentalMidi);
 }
 
 /**
@@ -98,19 +115,11 @@ export function evaluateRhythmTiming(
 }
 
 /**
- * Pure mapping from overall percentage score to pedagogical French grade label.
+ * Pure declarative mapping from overall percentage score to pedagogical French grade label.
  */
 export function computeGradeLabel(scorePercent: number): GradeLabel {
-  if (scorePercent >= 90) {
-    return 'Excellent';
-  }
-  if (scorePercent >= 75) {
-    return 'Très bien';
-  }
-  if (scorePercent >= 60) {
-    return 'Bien';
-  }
-  return 'À retravailler';
+  const matchedThreshold = GRADE_THRESHOLDS.find((entry) => scorePercent >= entry.min);
+  return matchedThreshold ? matchedThreshold.label : 'À retravailler';
 }
 
 /**
@@ -135,8 +144,14 @@ export function computeGradeSummary(
     });
   }
 
-  const correctPitchNotesCount = state.noteRecords.filter((r) => r.pitchCorrectFirstTry).length;
-  const onTimeRhythmNotesCount = state.noteRecords.filter((r) => r.rhythmStatus === 'on_time').length;
+  const correctPitchNotesCount = countWhere(
+    state.noteRecords,
+    (record) => record.pitchCorrectFirstTry
+  );
+  const onTimeRhythmNotesCount = countWhere(
+    state.noteRecords,
+    (record) => record.rhythmStatus === 'on_time'
+  );
 
   const pitchScorePercent = Math.round((correctPitchNotesCount / evaluatedCount) * 100);
   const rhythmScorePercent = Math.round((onTimeRhythmNotesCount / evaluatedCount) * 100);

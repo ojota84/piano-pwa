@@ -9,6 +9,7 @@
   ],
   "ignorePatterns": [
     "tsconfig.json",
+    "eslint.config.js",
     ".stryker-tmp/**"
   ],
   "reporters": [

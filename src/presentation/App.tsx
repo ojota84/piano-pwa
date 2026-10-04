@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import confetti from 'canvas-confetti';
 import { PartitionPiece } from '../core/models/music.types.ts';
 import { PitchResult } from '../core/models/pitch.types.ts';
@@ -23,7 +23,7 @@ export default function App() {
   );
 
   const [session, setSession] = useState<SessionSnapshot>(() =>
-    coordinatorRef.current.getSnapshot()
+    new TrainingSessionCoordinator(allPartitions[0]).getSnapshot()
   );
   const [isListening, setIsListening] = useState<boolean>(false);
   const [elapsedSeconds, setElapsedSeconds] = useState<number>(0);
@@ -87,7 +87,7 @@ export default function App() {
    * Delegates directly to TrainingSessionCoordinator instance ref, guaranteeing
    * zero stale React state closures when transitioning from Hub to Training.
    */
-  const onPitchDetected = useRef((detected: PitchResult) => {
+  const onPitchDetected = useCallback((detected: PitchResult) => {
     const { snapshot } = coordinatorRef.current.handlePitchDetected(detected);
     setSession(snapshot);
 
@@ -104,7 +104,7 @@ export default function App() {
         origin: { y: 0.6 },
       });
     }
-  }).current;
+  }, []);
 
   const toggleListening = async () => {
     if (!audioAdapterRef.current) return;
@@ -178,6 +178,7 @@ export default function App() {
         />
       ) : (
         <FocusTrainingView
+          key={`${session.selectedPiece.id}-${session.runId}`}
           runId={session.runId}
           level={session.selectedPiece}
           nextLevel={nextLevel}

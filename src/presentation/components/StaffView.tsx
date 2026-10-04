@@ -20,6 +20,66 @@ export interface StaffViewProps {
   readonly lastMismatch: boolean;
 }
 
+const STAFF_LINE_YS: readonly number[] = Object.freeze([84, 104, 124, 144, 164]);
+const CENTER_Y = 124;
+const STEP_HEIGHT = 10;
+const START_X = 135;
+const NOTE_SPACING = 76;
+const SVG_HEIGHT = 276;
+
+/**
+ * Pure higher-order generator for ledger lines above and below the 5-line pentagram.
+ */
+function computeLedgerLineYs(staffPos: number): Readonly<{
+  below: readonly number[];
+  above: readonly number[];
+}> {
+  const belowCount = staffPos <= -6 ? Math.floor((-6 - staffPos) / 2) + 1 : 0;
+  const aboveCount = staffPos >= 6 ? Math.floor((staffPos - 6) / 2) + 1 : 0;
+
+  return Object.freeze({
+    below: Object.freeze(
+      Array.from({ length: belowCount }, (_, idx) => CENTER_Y - (-6 - idx * 2) * STEP_HEIGHT)
+    ),
+    above: Object.freeze(
+      Array.from({ length: aboveCount }, (_, idx) => CENTER_Y - (6 + idx * 2) * STEP_HEIGHT)
+    ),
+  });
+}
+
+/**
+ * Pure helper computing the rhythm action cue displayed above the active notehead.
+ */
+function resolveRhythmCueText(
+  isRhythmMode: boolean,
+  currentIndex: number,
+  inStrikeZone: boolean,
+  isLate: boolean,
+  currentBeat: number,
+  clampedProgress: number,
+  previousNote?: MusicalNote
+): string {
+  if (!isRhythmMode) return '';
+
+  if (currentIndex === 0) {
+    return inStrikeZone ? `● Temps ${currentBeat}` : `Temps ${currentBeat}`;
+  }
+
+  if (inStrikeZone) return 'JOUEZ !';
+  if (isLate) return 'Trop tard';
+
+  const prevBeats = previousNote ? getNoteDurationBeats(previousNote.duration) : 1;
+  if (prevBeats >= 2) {
+    const currentHoldBeat = Math.min(
+      prevBeats,
+      Math.floor(clampedProgress * prevBeats) + 1
+    );
+    return `Tenez ${currentHoldBeat}/${prevBeats}`;
+  }
+
+  return 'Tenez...';
+}
+
 export const StaffView: React.FC<StaffViewProps> = ({
   notes,
   currentIndex,
@@ -34,22 +94,7 @@ export const StaffView: React.FC<StaffViewProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const isRhythmMode = mode === 'rythme';
-
-  // 5 Staff Lines centered at y = 124 to give room above for Beat Ring cue labels and below for Solfège:
-  // Line 5 (Top): y = 84 (staffPos = +4)
-  // Line 4: y = 104 (staffPos = +2)
-  // Line 3 (Middle): y = 124 (staffPos = 0)
-  // Line 2: y = 144 (staffPos = -2)
-  // Line 1 (Bottom): y = 164 (staffPos = -4)
-  const centerY = 124;
-  const staffLineY = [84, 104, 124, 144, 164];
-  const stepHeight = 10; // 10px per diatonic step
-
-  const startX = 135;
-  const noteSpacing = 76;
-  const svgWidth = Math.max(540, startX + notes.length * noteSpacing + 60);
-  const svgHeight = 276;
-
+  const svgWidth = Math.max(540, START_X + notes.length * NOTE_SPACING + 60);
   const measureBarIndices = computeMeasureBarLineIndices(notes, timeSignature);
 
   // Auto-center the partition viewport around the active note being played
@@ -60,7 +105,7 @@ export const StaffView: React.FC<StaffViewProps> = ({
       const svg = container.querySelector('svg');
       if (!svg) return;
 
-      const currentNoteX = startX + currentIndex * noteSpacing;
+      const currentNoteX = START_X + currentIndex * NOTE_SPACING;
       const svgRect = svg.getBoundingClientRect();
       const scale = svgRect.width / svgWidth;
 
@@ -92,14 +137,14 @@ export const StaffView: React.FC<StaffViewProps> = ({
         style={{ WebkitOverflowScrolling: 'touch' }}
       >
         <svg
-          viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+          viewBox={`0 0 ${svgWidth} ${SVG_HEIGHT}`}
           className="w-full h-60 sm:h-68"
           style={{ minWidth: `${svgWidth}px` }}
         >
-          <rect x="0" y="0" width={svgWidth} height={svgHeight} fill="#ffffff" />
+          <rect x="0" y="0" width={svgWidth} height={SVG_HEIGHT} fill="#ffffff" />
 
           {/* 5 Pentagram Staff Lines */}
-          {staffLineY.map((y, idx) => (
+          {STAFF_LINE_YS.map((y, idx) => (
             <line
               key={`line-${idx}`}
               x1="20"
@@ -142,7 +187,7 @@ export const StaffView: React.FC<StaffViewProps> = ({
             </text>
           )}
 
-          {/* Dynamic Time Signature (e.g. 4/4 or 3/4) */}
+          {/* Dynamic Time Signature */}
           <g transform="translate(95, 0)">
             <text x="0" y="119" fontSize="28" fontFamily="serif" fontWeight="700" fill="#0f172a" textAnchor="middle">
               {timeSignature[0]}
@@ -154,7 +199,7 @@ export const StaffView: React.FC<StaffViewProps> = ({
 
           {/* Measure Bar Lines */}
           {measureBarIndices.map((noteIdx) => {
-            const barX = startX + noteIdx * noteSpacing + noteSpacing / 2;
+            const barX = START_X + noteIdx * NOTE_SPACING + NOTE_SPACING / 2;
             return (
               <line
                 key={`bar-${noteIdx}`}
@@ -171,178 +216,66 @@ export const StaffView: React.FC<StaffViewProps> = ({
           {/* Notes on the Pentagram */}
           {notes.map((note, index) => {
             const staffPos = getDiatonicStaffPosition(note.step, note.octave, clef);
-            const x = startX + index * noteSpacing;
-            const y = centerY - staffPos * stepHeight;
+            const x = START_X + index * NOTE_SPACING;
+            const y = CENTER_Y - staffPos * STEP_HEIGHT;
 
             const isTarget = index === currentIndex;
             const isCompleted = index < currentIndex;
             const record = noteRecords[index];
+            const ledgerLines = computeLedgerLineYs(staffPos);
 
-            const ledgerLinesBelow: number[] = [];
-            if (staffPos <= -6) {
-              for (let p = -6; p >= staffPos; p -= 2) {
-                ledgerLinesBelow.push(centerY - p * stepHeight);
-              }
-            }
+            const activeSweep = currentIndex === 0 ? preStartBeatProgress : beatProgress;
+            const inStrikeZone =
+              isRhythmMode &&
+              (currentIndex === 0
+                ? preStartBeatProgress >= 0.82 || preStartBeatProgress <= 0.22
+                : beatProgress >= 0.65 && beatProgress <= 1.35);
+            const isLate = isRhythmMode && currentIndex > 0 && beatProgress > 1.35;
 
-            const ledgerLinesAbove: number[] = [];
-            if (staffPos >= 6) {
-              for (let p = 6; p <= staffPos; p += 2) {
-                ledgerLinesAbove.push(centerY - p * stepHeight);
-              }
-            }
+            const isCleanCompleted = isRhythmMode
+              ? !record || (record.pitchCorrectFirstTry && record.rhythmStatus === 'on_time')
+              : !record || record.pitchCorrectFirstTry;
 
-            let noteColor = '#1e293b';
-            let labelColor = '#64748b';
-            let halo = null;
-
-            if (isCompleted) {
-              const isClean = isRhythmMode
-                ? !record || (record.pitchCorrectFirstTry && record.rhythmStatus === 'on_time')
-                : !record || record.pitchCorrectFirstTry;
-              noteColor = isClean ? '#059669' : '#d97706';
-              labelColor = isClean ? '#059669' : '#b45309';
-            } else if (isTarget) {
-              // Beat Ring logic directly on the active notehead:
-              // - Before Note 1 (index === 0): sweeps 0..1 on every beat and flashes green at the beat impulse (0..0.25 or 0.85..1.0)
-              // - On Note 2+ (index > 0): sweeps 0..1 over the previous note's duration and turns bright green in the strike window (0.65..1.35)
-              const activeSweep = currentIndex === 0 ? preStartBeatProgress : beatProgress;
-              const inStrikeZone =
-                isRhythmMode &&
-                (currentIndex === 0
-                  ? preStartBeatProgress >= 0.82 || preStartBeatProgress <= 0.22
-                  : beatProgress >= 0.65 && beatProgress <= 1.35);
-
-              const isLate = isRhythmMode && currentIndex > 0 && beatProgress > 1.35;
-
-              noteColor = lastMismatch
+            const noteColor = isCompleted
+              ? isCleanCompleted
+                ? '#059669'
+                : '#d97706'
+              : isTarget
+              ? lastMismatch
                 ? '#dc2626'
                 : inStrikeZone
                 ? '#059669'
-                : '#d97706';
-              labelColor = lastMismatch
+                : '#d97706'
+              : '#1e293b';
+
+            const labelColor = isCompleted
+              ? isCleanCompleted
+                ? '#059669'
+                : '#b45309'
+              : isTarget
+              ? lastMismatch
                 ? '#dc2626'
                 : inStrikeZone
                 ? '#059669'
-                : '#b45309';
+                : '#b45309'
+              : '#64748b';
 
-              const ringRadius = 24;
-              const ringCircumference = 2 * Math.PI * ringRadius;
-              const clampedProgress = Math.min(1, Math.max(0, activeSweep));
+            const ringRadius = 24;
+            const ringCircumference = 2 * Math.PI * ringRadius;
+            const clampedProgress = Math.min(1, Math.max(0, activeSweep));
+            const rhythmCueText = isTarget
+              ? resolveRhythmCueText(
+                  isRhythmMode,
+                  currentIndex,
+                  inStrikeZone,
+                  isLate,
+                  currentBeat,
+                  clampedProgress,
+                  currentIndex > 0 ? notes[currentIndex - 1] : undefined
+                )
+              : '';
 
-              // Compute intuitive cue label directly above the active note on the partition
-              let rhythmCueText = '';
-              if (isRhythmMode) {
-                if (currentIndex === 0) {
-                  rhythmCueText = inStrikeZone ? `● Temps ${currentBeat}` : `Temps ${currentBeat}`;
-                } else {
-                  const prevNote = notes[currentIndex - 1];
-                  const prevBeats = getNoteDurationBeats(prevNote.duration);
-                  if (inStrikeZone) {
-                    rhythmCueText = 'JOUEZ !';
-                  } else if (isLate) {
-                    rhythmCueText = 'Trop tard';
-                  } else if (prevBeats >= 2) {
-                    const currentHoldBeat = Math.min(
-                      prevBeats,
-                      Math.floor(clampedProgress * prevBeats) + 1
-                    );
-                    rhythmCueText = `Tenez ${currentHoldBeat}/${prevBeats}`;
-                  } else {
-                    rhythmCueText = 'Tenez...';
-                  }
-                }
-              }
-
-              halo = (
-                <g>
-                  {/* Inner Halo Fill */}
-                  <circle
-                    cx={x}
-                    cy={y}
-                    r={isRhythmMode ? '21' : '20'}
-                    fill={
-                      lastMismatch
-                        ? '#fee2e2'
-                        : inStrikeZone
-                        ? '#d1fae5'
-                        : '#fef3c7'
-                    }
-                    opacity="0.9"
-                  />
-
-                  {/* Beat Ring Track & Animated Sweep directly on the Active Note */}
-                  {isRhythmMode && (
-                    <>
-                      {/* Background track ring */}
-                      <circle
-                        cx={x}
-                        cy={y}
-                        r={ringRadius}
-                        fill="none"
-                        stroke="#e2e8f0"
-                        strokeWidth="5"
-                      />
-                      {/* Green Target Strike Zone Arc (65% to 100% of the ring) */}
-                      {currentIndex > 0 && (
-                        <circle
-                          cx={x}
-                          cy={y}
-                          r={ringRadius}
-                          fill="none"
-                          stroke="#a7f3d0"
-                          strokeWidth="5"
-                          strokeDasharray={`${ringCircumference * 0.35} ${ringCircumference * 0.65}`}
-                          strokeDashoffset={-ringCircumference * 0.65}
-                          transform={`rotate(-90 ${x} ${y})`}
-                        />
-                      )}
-                      {/* Live Animated Beat Ring Progress */}
-                      <circle
-                        cx={x}
-                        cy={y}
-                        r={ringRadius}
-                        fill="none"
-                        stroke={
-                          lastMismatch
-                            ? '#dc2626'
-                            : inStrikeZone
-                            ? '#059669'
-                            : isLate
-                            ? '#f43f5e'
-                            : '#f59e0b'
-                        }
-                        strokeWidth="5"
-                        strokeLinecap="round"
-                        strokeDasharray={ringCircumference}
-                        strokeDashoffset={ringCircumference * (1 - clampedProgress)}
-                        transform={`rotate(-90 ${x} ${y})`}
-                      />
-                      {/* Direct Action Cue Text right above the active note */}
-                      <text
-                        x={x}
-                        y={Math.min(34, y - 32)}
-                        textAnchor="middle"
-                        fontSize="11"
-                        fontWeight="800"
-                        fill={
-                          inStrikeZone
-                            ? '#059669'
-                            : isLate
-                            ? '#e11d48'
-                            : '#d97706'
-                        }
-                        className="font-sans select-none"
-                      >
-                        {rhythmCueText}
-                      </text>
-                    </>
-                  )}
-                </g>
-              );
-            }
-
-            const stemUp = y > centerY;
+            const stemUp = y > CENTER_Y;
             const stemX = stemUp ? x + 9.5 : x - 9.5;
             const stemY2 = stemUp ? y - 44 : y + 44;
 
@@ -359,9 +292,88 @@ export const StaffView: React.FC<StaffViewProps> = ({
 
             return (
               <g key={note.id}>
-                {halo}
+                {isTarget && (
+                  <g>
+                    <circle
+                      cx={x}
+                      cy={y}
+                      r={isRhythmMode ? '21' : '20'}
+                      fill={
+                        lastMismatch
+                          ? '#fee2e2'
+                          : inStrikeZone
+                          ? '#d1fae5'
+                          : '#fef3c7'
+                      }
+                      opacity="0.9"
+                    />
 
-                {ledgerLinesBelow.map((ly, lIdx) => (
+                    {isRhythmMode && (
+                      <>
+                        <circle
+                          cx={x}
+                          cy={y}
+                          r={ringRadius}
+                          fill="none"
+                          stroke="#e2e8f0"
+                          strokeWidth="5"
+                        />
+                        {currentIndex > 0 && (
+                          <circle
+                            cx={x}
+                            cy={y}
+                            r={ringRadius}
+                            fill="none"
+                            stroke="#a7f3d0"
+                            strokeWidth="5"
+                            strokeDasharray={`${ringCircumference * 0.35} ${ringCircumference * 0.65}`}
+                            strokeDashoffset={-ringCircumference * 0.65}
+                            transform={`rotate(-90 ${x} ${y})`}
+                          />
+                        )}
+                        <circle
+                          cx={x}
+                          cy={y}
+                          r={ringRadius}
+                          fill="none"
+                          stroke={
+                            lastMismatch
+                              ? '#dc2626'
+                              : inStrikeZone
+                              ? '#059669'
+                              : isLate
+                              ? '#f43f5e'
+                              : '#f59e0b'
+                          }
+                          strokeWidth="5"
+                          strokeLinecap="round"
+                          strokeDasharray={ringCircumference}
+                          strokeDashoffset={ringCircumference * (1 - clampedProgress)}
+                          transform={`rotate(-90 ${x} ${y})`}
+                        />
+                        <text
+                          x={x}
+                          y={Math.min(34, y - 32)}
+                          textAnchor="middle"
+                          fontSize="11"
+                          fontWeight="800"
+                          fill={
+                            inStrikeZone
+                              ? '#059669'
+                              : isLate
+                              ? '#e11d48'
+                              : '#d97706'
+                          }
+                          className="font-sans select-none"
+                        >
+                          {rhythmCueText}
+                        </text>
+                      </>
+                    )}
+                  </g>
+                )}
+
+                {ledgerLines.below.map((ly, lIdx) => (
                   <line
                     key={`ledger-below-${lIdx}`}
                     x1={x - 16}
@@ -373,7 +385,7 @@ export const StaffView: React.FC<StaffViewProps> = ({
                   />
                 ))}
 
-                {ledgerLinesAbove.map((ly, lIdx) => (
+                {ledgerLines.above.map((ly, lIdx) => (
                   <line
                     key={`ledger-above-${lIdx}`}
                     x1={x - 16}
@@ -385,7 +397,6 @@ export const StaffView: React.FC<StaffViewProps> = ({
                   />
                 ))}
 
-                {/* Note Stem */}
                 {note.duration !== 'whole' && (
                   <line
                     x1={stemX}
@@ -397,7 +408,6 @@ export const StaffView: React.FC<StaffViewProps> = ({
                   />
                 )}
 
-                {/* Eighth-Note Flag (Croche) */}
                 {note.duration === 'eighth' && (
                   <path
                     d={
@@ -412,7 +422,6 @@ export const StaffView: React.FC<StaffViewProps> = ({
                   />
                 )}
 
-                {/* Notehead (Hollow for Half & Whole, Filled for Quarter & Eighth) */}
                 <ellipse
                   cx={x}
                   cy={y}
@@ -424,7 +433,6 @@ export const StaffView: React.FC<StaffViewProps> = ({
                   strokeWidth="2.4"
                 />
 
-                {/* Solfège Pitch Label */}
                 <text
                   x={x}
                   y={isRhythmMode ? 244 : 250}
@@ -437,7 +445,6 @@ export const StaffView: React.FC<StaffViewProps> = ({
                   {note.solfegePitch}
                 </text>
 
-                {/* Rhythm Duration & Timing Indicator (only in Rythme mode) */}
                 {isRhythmMode && (
                   <text
                     x={x}
@@ -460,7 +467,6 @@ export const StaffView: React.FC<StaffViewProps> = ({
                   </text>
                 )}
 
-                {/* Fingering hint (when not covered by rhythm cue) */}
                 {note.finger && !isRhythmMode && (
                   <text
                     x={x}

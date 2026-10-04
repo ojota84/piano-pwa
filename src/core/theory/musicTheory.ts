@@ -8,6 +8,20 @@ export const CHROMATIC_SOLFEGE: readonly string[] = Object.freeze([
   'Do', 'Do#', 'Ré', 'Ré#', 'Mi', 'Fa', 'Fa#', 'Sol', 'Sol#', 'La', 'La#', 'Si',
 ]);
 
+const DURATION_BEATS_MAP: Readonly<Record<NoteDuration, number>> = Object.freeze({
+  whole: 4,
+  half: 2,
+  quarter: 1,
+  eighth: 0.5,
+});
+
+const DURATION_LABELS_MAP: Readonly<Record<NoteDuration, string>> = Object.freeze({
+  whole: 'Ronde · 4 temps',
+  half: 'Blanche · 2 temps',
+  quarter: 'Noire · 1 temps',
+  eighth: 'Croche · ½ temps',
+});
+
 /**
  * Calculates diatonic staff step relative to the middle line (Line 3).
  * In Treble Clef: Line 3 is Si 4 (staffPosition = 0).
@@ -20,14 +34,8 @@ export function getDiatonicStaffPosition(
 ): number {
   const stepIndex = SOLFEGE_STEPS.indexOf(step);
   const diatonicRank = octave * 7 + stepIndex;
-
-  if (clef === 'treble') {
-    // Si 4 is Line 3: 4 * 7 + 6 = 34
-    return diatonicRank - 34;
-  } else {
-    // Ré 3 is Line 3: 3 * 7 + 1 = 22
-    return diatonicRank - 22;
-  }
+  const referenceLineRank = clef === 'treble' ? 34 : 22;
+  return diatonicRank - referenceLineRank;
 }
 
 /**
@@ -60,32 +68,14 @@ export function frequencyToMidiAndSolfege(frequency: number): Readonly<{
  * Returns the number of quarter-note beats for a given NoteDuration.
  */
 export function getNoteDurationBeats(duration: NoteDuration): number {
-  switch (duration) {
-    case 'whole':
-      return 4;
-    case 'half':
-      return 2;
-    case 'quarter':
-      return 1;
-    case 'eighth':
-      return 0.5;
-  }
+  return DURATION_BEATS_MAP[duration];
 }
 
 /**
  * Returns the French Solfège rhythm label for a NoteDuration.
  */
 export function getNoteDurationLabel(duration: NoteDuration): string {
-  switch (duration) {
-    case 'whole':
-      return 'Ronde · 4 temps';
-    case 'half':
-      return 'Blanche · 2 temps';
-    case 'quarter':
-      return 'Noire · 1 temps';
-    case 'eighth':
-      return 'Croche · ½ temps';
-  }
+  return DURATION_LABELS_MAP[duration];
 }
 
 /**
@@ -99,7 +89,7 @@ export function getNoteTargetDurationMs(duration: NoteDuration, tempoBpm: number
 
 /**
  * Computes the immutable list of note indices AFTER which a vertical measure bar line
- * should be drawn, given a sequence of notes and a time signature.
+ * should be drawn, using a pure functional reduction over the note sequence.
  * Excludes the final note index since the piece ends with a double bar line.
  */
 export function computeMeasureBarLineIndices(
@@ -107,18 +97,19 @@ export function computeMeasureBarLineIndices(
   timeSignature: readonly [number, number] = [4, 4]
 ): readonly number[] {
   const beatsPerMeasure = (timeSignature[0] * 4) / timeSignature[1];
-  const barIndices: number[] = [];
-  let accumulatedBeats = 0;
 
-  for (let i = 0; i < notes.length - 1; i++) {
-    const nextBeats = accumulatedBeats + getNoteDurationBeats(notes[i].duration);
-    if (nextBeats >= beatsPerMeasure) {
-      barIndices.push(i);
-      accumulatedBeats = 0;
-    } else {
-      accumulatedBeats = nextBeats;
-    }
-  }
+  const reduction = notes.slice(0, -1).reduce<{
+    readonly barIndices: readonly number[];
+    readonly accumulatedBeats: number;
+  }>(
+    (acc, note, index) => {
+      const nextBeats = acc.accumulatedBeats + getNoteDurationBeats(note.duration);
+      return nextBeats >= beatsPerMeasure
+        ? { barIndices: [...acc.barIndices, index], accumulatedBeats: 0 }
+        : { barIndices: acc.barIndices, accumulatedBeats: nextBeats };
+    },
+    { barIndices: [], accumulatedBeats: 0 }
+  );
 
-  return Object.freeze(barIndices);
+  return Object.freeze(reduction.barIndices);
 }
