@@ -1,13 +1,19 @@
 # Capability Specification: Progressive Curriculum & Session Journey
 
-## Requirement: 34-Level Progressive Solfège & Rhythm Curriculum
-The partition repository (`src/infrastructure/data/InMemoryPartitionRepository.ts`) MUST provide 34 progressive lessons (`levelNumber` `1..34`) across `'Débutant'`, `'Intermédiaire'`, and `'Avancé'` in both **Clé de Sol** (`treble`) and **Clé de Fa** (`bass`), covering `'lecture'` and `'rythme'` modes.
+## Requirement: 20-Level Progressive Solfège & Full-Range Rhythm Curriculum
+The partition repository (`src/infrastructure/data/InMemoryPartitionRepository.ts`) MUST provide 20 progressive lessons (`levelNumber` `1..20`) across `'Débutant'`, `'Intermédiaire'`, and `'Avancé'` in both **Clé de Sol** (`treble`) and **Clé de Fa** (`bass`), covering `'lecture'` (8 lessons) and `'rythme'` (12 lessons).
 
 ### Scenario: Curriculum Completeness & Sequential Ordering
 * **GIVEN** `partitionRepository.getAllPartitions()`
 * **WHEN** inspected by the curriculum test suite
-* **THEN** it MUST contain 34 levels numbered `1` through `34`
+* **THEN** it MUST contain 20 levels numbered `1` through `20`
 * **AND** every note MUST define a valid Fixed-Do `solfegePitch`, `midi`, `step`, `octave`, and `duration` (`whole`, `half`, `quarter`, `eighth`).
+
+### Scenario: Full Rhythm Range Lessons (Rondes, Blanches, Noires & Croches)
+* **GIVEN** the Rhythm lessons (`mode === 'rythme'`) in `partitionRepository.getPartitionsByMode('rythme')`
+* **WHEN** inspected across `'Débutant'`, `'Intermédiaire'`, and `'Avancé'`
+* **THEN** each difficulty tier MUST include Rhythm lessons combining **Blanches** (`'half'`, 2t), **Noires** (`'quarter'`, 1t), **Rondes** (`'whole'`, 4t), and **Croches** (`'eighth'`, ½t)
+* **AND** both `'treble'` (Clé de Sol) and `'bass'` (Clé de Fa) MUST include Rhythm lessons with mixed durations.
 
 ## Requirement: 2-Screen Session Coordination & Rejouer (`runId`) Reset
 `TrainingSessionCoordinator` (`src/core/engine/TrainingSessionCoordinator.ts`) MUST manage transitions between `'hub'` (`CurriculumHub`) and `'training'` (`FocusTrainingView`), producing frozen `SessionSnapshot` objects.
