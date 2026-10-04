@@ -1,4 +1,4 @@
-import { ClefType, SolfegeStep } from '../models/music.types.ts';
+import { ClefType, MusicalNote, NoteDuration, SolfegeStep } from '../models/music.types.ts';
 
 export const SOLFEGE_STEPS: SolfegeStep[] = ['Do', 'Ré', 'Mi', 'Fa', 'Sol', 'La', 'Si'];
 
@@ -7,7 +7,7 @@ export const CHROMATIC_SOLFEGE = [
 ];
 
 /**
- * Calculates diatonic staff step relative to the middle line (Line 3, y = 90).
+ * Calculates diatonic staff step relative to the middle line (Line 3).
  * In Treble Clef: Line 3 is Si 4 (staffPosition = 0).
  * In Bass Clef: Line 3 is Ré 3 (staffPosition = 0).
  */
@@ -52,4 +52,69 @@ export function frequencyToMidiAndSolfege(frequency: number): {
     octave,
     cents,
   };
+}
+
+/**
+ * Returns the number of quarter-note beats for a given NoteDuration.
+ */
+export function getNoteDurationBeats(duration: NoteDuration): number {
+  switch (duration) {
+    case 'whole':
+      return 4;
+    case 'half':
+      return 2;
+    case 'quarter':
+      return 1;
+    case 'eighth':
+      return 0.5;
+  }
+}
+
+/**
+ * Returns the French Solfège rhythm label for a NoteDuration.
+ */
+export function getNoteDurationLabel(duration: NoteDuration): string {
+  switch (duration) {
+    case 'whole':
+      return 'Ronde · 4 temps';
+    case 'half':
+      return 'Blanche · 2 temps';
+    case 'quarter':
+      return 'Noire · 1 temps';
+    case 'eighth':
+      return 'Croche · ½ temps';
+  }
+}
+
+/**
+ * Computes the target duration in milliseconds for a note at a given tempo (BPM).
+ */
+export function getNoteTargetDurationMs(duration: NoteDuration, tempoBpm: number): number {
+  const safeBpm = Math.max(20, Math.min(240, tempoBpm));
+  const beatMs = 60000 / safeBpm;
+  return Math.round(beatMs * getNoteDurationBeats(duration));
+}
+
+/**
+ * Computes the note indices AFTER which a vertical measure bar line should be drawn,
+ * given a sequence of notes and a time signature (e.g. [4, 4] or [3, 4]).
+ * Excludes the final note index since the piece ends with a double bar line.
+ */
+export function computeMeasureBarLineIndices(
+  notes: MusicalNote[],
+  timeSignature: [number, number] = [4, 4]
+): number[] {
+  const beatsPerMeasure = timeSignature[0] * (4 / timeSignature[1]);
+  const barIndices: number[] = [];
+  let accumulatedBeats = 0;
+
+  for (let i = 0; i < notes.length - 1; i++) {
+    accumulatedBeats += getNoteDurationBeats(notes[i].duration);
+    if (accumulatedBeats >= beatsPerMeasure - 1e-6) {
+      barIndices.push(i);
+      accumulatedBeats = 0;
+    }
+  }
+
+  return barIndices;
 }

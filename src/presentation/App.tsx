@@ -82,12 +82,19 @@ export default function App() {
     return () => clearInterval(interval);
   }, [session.isCompleted, session.activeScreen]);
 
+  // Grace window timestamp to ignore screen tap / mic startup transients when opening a lesson
+  const ignorePitchUntilRef = useRef<number>(0);
+
   /**
    * Stable Audio Pitch Callback:
    * Delegates directly to TrainingSessionCoordinator instance ref, guaranteeing
    * zero stale React state closures when transitioning from Hub to Training.
    */
   const onPitchDetected = useRef((detected: PitchResult) => {
+    if (Date.now() < ignorePitchUntilRef.current) {
+      return;
+    }
+
     const { snapshot } = coordinatorRef.current.handlePitchDetected(detected);
     setSession(snapshot);
 
@@ -130,12 +137,16 @@ export default function App() {
   };
 
   const resetPiece = (piece?: PartitionPiece) => {
+    ignorePitchUntilRef.current = Date.now() + 650;
+    coordinatorRef.current.clearPitch();
     const snapshot = coordinatorRef.current.resetLevel(piece);
     setSession(snapshot);
     setElapsedSeconds(0);
   };
 
   const handleStartLevel = (level: PartitionPiece) => {
+    ignorePitchUntilRef.current = Date.now() + 650;
+    coordinatorRef.current.clearPitch();
     const snapshot = coordinatorRef.current.startLevel(level);
     setSession(snapshot);
     setElapsedSeconds(0);

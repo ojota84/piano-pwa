@@ -1,7 +1,8 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ArrowLeft, RotateCcw, Check, ChevronRight } from 'lucide-react';
 import { PartitionPiece } from '../../core/models/music.types.ts';
 import { PitchResult } from '../../core/models/pitch.types.ts';
+import { getNoteDurationLabel } from '../../core/theory/musicTheory.ts';
 import { StaffView } from './StaffView.tsx';
 import { AcousticTuner } from './AcousticTuner.tsx';
 
@@ -42,6 +43,29 @@ export const FocusTrainingView: React.FC<FocusTrainingViewProps> = ({
 }) => {
   const targetNote = level.notes[currentIndex] || level.notes[0];
   const isTreble = level.clef === 'treble';
+
+  const [rhythmPulseActive, setRhythmPulseActive] = useState<boolean>(true);
+  const [tempoBpm, setTempoBpm] = useState<number>(level.tempo || 75);
+  const [currentBeat, setCurrentBeat] = useState<number>(1);
+
+  const beatsPerMeasure = level.timeSignature[0] || 4;
+
+  // Sync tempo when switching levels
+  useEffect(() => {
+    setTempoBpm(level.tempo || 75);
+    setCurrentBeat(1);
+  }, [level.id, level.tempo]);
+
+  // Silent Visual Metronome Pulse (respects Acoustic Anti-Feedback Rule)
+  useEffect(() => {
+    if (!rhythmPulseActive || isCompleted) return;
+    const intervalMs = Math.round(60000 / Math.max(30, Math.min(200, tempoBpm)));
+    const timer = setInterval(() => {
+      setCurrentBeat((prev) => (prev % beatsPerMeasure) + 1);
+    }, intervalMs);
+
+    return () => clearInterval(timer);
+  }, [rhythmPulseActive, isCompleted, tempoBpm, beatsPerMeasure]);
 
   // Allow pressing Enter when level is completed to immediately launch the proposed next level
   useEffect(() => {
@@ -150,11 +174,75 @@ export const FocusTrainingView: React.FC<FocusTrainingViewProps> = ({
           </div>
         )}
 
+        {/* Minimalist Rhythm & Visual Pulse Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-4 text-xs text-slate-400 pb-1">
+          <div className="flex items-center gap-3">
+            <span>
+              Mesure <strong className="text-slate-200 font-mono">{level.timeSignature[0]}/{level.timeSignature[1]}</strong>
+            </span>
+            <span className="text-slate-800">·</span>
+            <span>
+              Rythme : <strong className="text-amber-400 font-medium">{getNoteDurationLabel(targetNote.duration)}</strong>
+            </span>
+          </div>
+
+          {/* Visual Beat Pulse & Tempo Control */}
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2" title="Pulsation visuelle silencieuse">
+              {Array.from({ length: beatsPerMeasure }, (_, idx) => {
+                const beatNum = idx + 1;
+                const isActiveBeat = rhythmPulseActive && currentBeat === beatNum;
+                return (
+                  <span
+                    key={beatNum}
+                    className={`w-5 h-5 flex items-center justify-center font-mono text-[11px] transition-colors ${
+                      isActiveBeat
+                        ? beatNum === 1
+                          ? 'text-amber-400 font-bold underline underline-offset-4'
+                          : 'text-emerald-400 font-bold underline underline-offset-4'
+                        : 'text-slate-600'
+                    }`}
+                  >
+                    {beatNum}
+                  </span>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center gap-1.5 font-mono">
+              <button
+                onClick={() => setTempoBpm((b) => Math.max(40, b - 5))}
+                className="text-slate-500 hover:text-slate-200 px-1 cursor-pointer"
+                title="Ralentir le tempo"
+              >
+                −
+              </button>
+              <button
+                onClick={() => setRhythmPulseActive((a) => !a)}
+                className={`cursor-pointer transition-colors ${
+                  rhythmPulseActive ? 'text-slate-300' : 'text-slate-600 line-through'
+                }`}
+                title="Activer/Désactiver la pulsation visuelle"
+              >
+                {tempoBpm} BPM
+              </button>
+              <button
+                onClick={() => setTempoBpm((b) => Math.min(160, b + 5))}
+                className="text-slate-500 hover:text-slate-200 px-1 cursor-pointer"
+                title="Accélérer le tempo"
+              >
+                +
+              </button>
+            </div>
+          </div>
+        </div>
+
         {/* Clean Music Sheet Strip */}
         <StaffView
           notes={level.notes}
           currentIndex={currentIndex}
           clef={level.clef}
+          timeSignature={level.timeSignature}
           lastMismatch={lastMismatch}
         />
 

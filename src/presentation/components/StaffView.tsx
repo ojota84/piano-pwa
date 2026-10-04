@@ -1,11 +1,16 @@
 import React, { useRef, useEffect } from 'react';
 import { MusicalNote, ClefType } from '../../core/models/music.types.ts';
-import { getDiatonicStaffPosition } from '../../core/theory/musicTheory.ts';
+import {
+  getDiatonicStaffPosition,
+  computeMeasureBarLineIndices,
+  getNoteDurationBeats,
+} from '../../core/theory/musicTheory.ts';
 
 export interface StaffViewProps {
   notes: MusicalNote[];
   currentIndex: number;
   clef: ClefType;
+  timeSignature?: [number, number];
   lastMismatch: boolean;
 }
 
@@ -13,6 +18,7 @@ export const StaffView: React.FC<StaffViewProps> = ({
   notes,
   currentIndex,
   clef,
+  timeSignature = [4, 4],
   lastMismatch,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -28,9 +34,11 @@ export const StaffView: React.FC<StaffViewProps> = ({
   const stepHeight = 10; // 10px per diatonic step
 
   const startX = 135;
-  const noteSpacing = 72;
+  const noteSpacing = 74;
   const svgWidth = Math.max(540, startX + notes.length * noteSpacing + 60);
-  const svgHeight = 260;
+  const svgHeight = 268;
+
+  const measureBarIndices = computeMeasureBarLineIndices(notes, timeSignature);
 
   // Auto-center the partition viewport around the active note being played
   useEffect(() => {
@@ -73,7 +81,7 @@ export const StaffView: React.FC<StaffViewProps> = ({
       >
         <svg
           viewBox={`0 0 ${svgWidth} ${svgHeight}`}
-          className="w-full h-56 sm:h-60"
+          className="w-full h-56 sm:h-64"
           style={{ minWidth: `${svgWidth}px` }}
         >
           <rect x="0" y="0" width={svgWidth} height={svgHeight} fill="#ffffff" />
@@ -122,15 +130,31 @@ export const StaffView: React.FC<StaffViewProps> = ({
             </text>
           )}
 
-          {/* Time Signature 4/4 */}
+          {/* Dynamic Time Signature (e.g. 4/4 or 3/4) */}
           <g transform="translate(95, 0)">
             <text x="0" y="115" fontSize="28" fontFamily="serif" fontWeight="700" fill="#0f172a" textAnchor="middle">
-              4
+              {timeSignature[0]}
             </text>
             <text x="0" y="155" fontSize="28" fontFamily="serif" fontWeight="700" fill="#0f172a" textAnchor="middle">
-              4
+              {timeSignature[1]}
             </text>
           </g>
+
+          {/* Measure Bar Lines */}
+          {measureBarIndices.map((noteIdx) => {
+            const barX = startX + noteIdx * noteSpacing + noteSpacing / 2;
+            return (
+              <line
+                key={`bar-${noteIdx}`}
+                x1={barX}
+                y1="80"
+                x2={barX}
+                y2="160"
+                stroke="#64748b"
+                strokeWidth="1.5"
+              />
+            );
+          })}
 
           {/* Notes on the Pentagram */}
           {notes.map((note, index) => {
@@ -181,6 +205,9 @@ export const StaffView: React.FC<StaffViewProps> = ({
             const stemX = stemUp ? x + 9.5 : x - 9.5;
             const stemY2 = stemUp ? y - 44 : y + 44;
 
+            const beats = getNoteDurationBeats(note.duration);
+            const beatText = beats === 0.5 ? '½t' : `${beats}t`;
+
             return (
               <g key={note.id}>
                 {halo}
@@ -209,6 +236,7 @@ export const StaffView: React.FC<StaffViewProps> = ({
                   />
                 ))}
 
+                {/* Note Stem */}
                 {note.duration !== 'whole' && (
                   <line
                     x1={stemX}
@@ -220,6 +248,22 @@ export const StaffView: React.FC<StaffViewProps> = ({
                   />
                 )}
 
+                {/* Eighth-Note Flag (Croche) */}
+                {note.duration === 'eighth' && (
+                  <path
+                    d={
+                      stemUp
+                        ? `M ${stemX} ${stemY2} C ${stemX + 10} ${stemY2 + 8}, ${stemX + 12} ${stemY2 + 18}, ${stemX + 6} ${stemY2 + 26}`
+                        : `M ${stemX} ${stemY2} C ${stemX + 10} ${stemY2 - 8}, ${stemX + 12} ${stemY2 - 18}, ${stemX + 6} ${stemY2 - 26}`
+                    }
+                    fill="none"
+                    stroke={noteColor}
+                    strokeWidth="2.4"
+                    strokeLinecap="round"
+                  />
+                )}
+
+                {/* Notehead (Hollow for Half & Whole, Filled for Quarter & Eighth) */}
                 <ellipse
                   cx={x}
                   cy={y}
@@ -234,7 +278,7 @@ export const StaffView: React.FC<StaffViewProps> = ({
                 {/* Solfège Pitch Label */}
                 <text
                   x={x}
-                  y={242}
+                  y={238}
                   textAnchor="middle"
                   fontSize={isTarget ? '15' : '13'}
                   fontWeight={isTarget ? '700' : '500'}
@@ -242,6 +286,19 @@ export const StaffView: React.FC<StaffViewProps> = ({
                   className="font-sans select-none"
                 >
                   {note.solfegePitch}
+                </text>
+
+                {/* Subtle Rhythm Duration Beat Indicator */}
+                <text
+                  x={x}
+                  y={254}
+                  textAnchor="middle"
+                  fontSize="10"
+                  fontWeight="500"
+                  fill={isTarget ? labelColor : '#94a3b8'}
+                  className="font-mono select-none"
+                >
+                  {beatText}
                 </text>
 
                 {/* Fingering hint */}
