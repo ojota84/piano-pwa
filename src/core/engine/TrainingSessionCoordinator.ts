@@ -1,5 +1,9 @@
 import { PartitionPiece } from '../models/music.types.ts';
-import { PitchResult, EvaluationResult } from '../models/pitch.types.ts';
+import {
+  PitchResult,
+  EvaluationResult,
+  LevelGradeSummary,
+} from '../models/pitch.types.ts';
 import { PracticeEngine } from './PracticeEngine.ts';
 
 export type ScreenMode = 'hub' | 'training';
@@ -9,7 +13,10 @@ export interface SessionSnapshot {
   selectedPiece: PartitionPiece;
   currentIndex: number;
   isCompleted: boolean;
+  hasPerformanceStarted: boolean;
+  tempoBpm: number;
   accuracy: number;
+  gradeSummary: LevelGradeSummary;
   lastMismatch: boolean;
   elapsedSeconds: number;
   currentPitch: PitchResult | null;
@@ -54,6 +61,14 @@ export class TrainingSessionCoordinator {
     this.selectedPiece = level;
     this.lastMismatch = false;
     this.engine.loadPartition(level);
+    return this.getSnapshot(false);
+  }
+
+  /**
+   * Updates the active tempo (BPM) used for rhythm evaluation.
+   */
+  public setTempoBpm(bpm: number): SessionSnapshot {
+    this.engine.setTempoBpm(bpm);
     return this.getSnapshot(false);
   }
 
@@ -117,7 +132,10 @@ export class TrainingSessionCoordinator {
       selectedPiece: this.selectedPiece,
       currentIndex: this.engine.getCurrentIndex(),
       isCompleted: this.engine.isCompleted(),
+      hasPerformanceStarted: this.engine.hasPerformanceStarted(),
+      tempoBpm: this.engine.getTempoBpm(),
       accuracy: this.engine.getAccuracyPercentage(),
+      gradeSummary: this.engine.getGradeSummary(),
       lastMismatch: this.lastMismatch,
       elapsedSeconds: this.engine.getElapsedTimeSeconds(),
       currentPitch: this.currentPitch,

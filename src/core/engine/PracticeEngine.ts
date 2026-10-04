@@ -5,19 +5,24 @@ import {
 import {
   PitchResult,
   EvaluationResult,
+  NotePerformanceRecord,
+  LevelGradeSummary,
+  RhythmStatus,
 } from '../models/pitch.types.ts';
+import { getNoteTargetDurationMs } from '../theory/musicTheory.ts';
 
 /**
- * "Wait For Me" Sight-Reading Practice Engine (Pure Domain).
+ * Sight-Reading & Rhythm Practice Engine (Pure Domain).
  *
  * Core Business Rules:
  * 1. Exact MIDI matching between target Solfège note and detected piano pitch.
- * 2. 500ms refractory lockout to prevent piano string resonance from double-triggering.
- * 3. Harmonic & sustain decay lock: after matching a note (e.g. La 4), neither that same note
- *    nor its natural harmonics (La 5 octave, Mi 6 twelfth) can trigger the next note unless
- *    a genuine new key strike (silence release or acoustic RMS attack surge) occurs.
- * 4. 2-frame consecutive confirmation with pitch-cents stability and minimum confidence (>= 0.68)
- *    to reject ambient room noise when no piano key is played.
+ * 2. Performance evaluation starts ONLY when the 1st note (index 0) is played.
+ * 3. Per-note Pitch & Rhythm Grading:
+ *    - Tracks whether each note was played cleanly on the first try (pitch accuracy).
+ *    - Evaluates inter-onset timing against the previous note's rhythmic duration at active BPM.
+ * 4. 500ms refractory lockout + Harmonic & sustain decay lock to prevent string resonance/overtones
+ *    (e.g. La 4 -> La 5) from false-triggering.
+ * 5. 2-frame consecutive confirmation with pitch-cents stability and minimum confidence (>= 0.68).
  */
 export class PracticeEngine {
   private partition: PartitionPiece | null = null;
@@ -26,6 +31,12 @@ export class PracticeEngine {
   private correctAttempts = 0;
   private startTimeMs = 0;
   private endTimeMs = 0;
+  private tempoBpm = 75;
+
+  // Per-note rhythm & pitch grading state
+  private hasStartedFirstNote = false;
+  private wrongAttemptsOnCurrentNote = 0;
+  private noteRecords: NotePerformanceRecord[] = [];
 
   // Timing, Stability & Harmonic Decay Filters
   private lastMatchTimeMs = 0;
@@ -47,14 +58,34 @@ export class PracticeEngine {
     this.currentIndex = 0;
     this.totalAttempts = 0;
     this.correctAttempts = 0;
-    this.startTimeMs = Date.now();
+    this.startTimeMs = 0;
     this.endTimeMs = 0;
+    this.tempoBpm = partition.tempo || 75;
+    this.hasStartedFirstNote = false;
+    this.wrongAttemptsOnCurrentNote = 0;
+    this.noteRecords = [];
     this.lastMatchTimeMs = 0;
     this.consecutiveTargetCount = 0;
     this.lastCandidateCents = null;
     this.lastMatchedMidi = null;
     this.minRmsSinceMatch = 0;
     this.hasReArticulated = true;
+  }
+
+  public setTempoBpm(bpm: number): void {
+    this.tempoBpm = Math.max(30, Math.min(220, bpm));
+  }
+
+  public getTempoBpm(): number {
+    return this.tempoBpm;
+  }
+
+  public hasPerformanceStarted(): boolean {
+    return this.hasStartedFirstNote;
+  }
+
+  public getNoteRecords(): NotePerformanceRecord[] {
+    return [...this.noteRecords];
   }
 
   public processDetectedPitch(detectedPitch: PitchResult | null): EvaluationResult {
@@ -137,6 +168,47 @@ export class PracticeEngine {
       if (this.consecutiveTargetCount >= PracticeEngine.CONSECUTIVE_FRAMES_REQUIRED) {
         this.consecutiveTargetCount = 0;
         this.lastCandidateCents = null;
+
+        // Evaluate Rhythm Timing:
+        // Note 0 anchors and starts the performance evaluation clock!
+        let rhythmStatus: RhythmStatus = 'on_time';
+        let expectedIntervalMs = 0;
+        let actualIntervalMs = 0;
+
+        if (!this.hasStartedFirstNote || this.currentIndex === 0) {
+          this.hasStartedFirstNote = true;
+          this.startTimeMs = now;
+          rhythmStatus = 'on_time';
+        } else {
+          const prevNote = this.partition.notes[this.currentIndex - 1];
+          expectedIntervalMs = getNoteTargetDurationMs(prevNote.duration, this.tempoBpm);
+          actualIntervalMs = now - this.lastMatchTimeMs;
+          const toleranceMs = Math.max(280, Math.round(expectedIntervalMs * 0.35));
+          const deltaMs = actualIntervalMs - expectedIntervalMs;
+
+          if (Math.abs(deltaMs) <= toleranceMs) {
+            rhythmStatus = 'on_time';
+          } else if (deltaMs < -toleranceMs) {
+            rhythmStatus = 'early';
+          } else {
+            rhythmStatus = 'late';
+          }
+        }
+
+        const noteRecord: NotePerformanceRecord = {
+          noteIndex: this.currentIndex,
+          noteId: target.id,
+          solfegePitch: target.solfegePitch,
+          pitchCorrectFirstTry: this.wrongAttemptsOnCurrentNote === 0,
+          wrongAttemptsOnNote: this.wrongAttemptsOnCurrentNote,
+          rhythmStatus,
+          expectedIntervalMs,
+          actualIntervalMs,
+        };
+
+        this.noteRecords.push(noteRecord);
+        this.wrongAttemptsOnCurrentNote = 0;
+
         this.lastMatchTimeMs = now;
         this.lastMatchedMidi = target.midi;
         this.minRmsSinceMatch = detectedPitch.rms;
@@ -154,6 +226,7 @@ export class PracticeEngine {
           status: 'MATCH',
           targetNote: target,
           detectedPitch,
+          noteRecord,
         };
       } else {
         return { status: 'IGNORED' };
@@ -162,12 +235,63 @@ export class PracticeEngine {
       this.consecutiveTargetCount = 0;
       this.lastCandidateCents = null;
       this.totalAttempts++;
+      // Only count wrong pitch attempts once the performance has begun or while attempting the note
+      this.wrongAttemptsOnCurrentNote++;
       return {
         status: 'MISMATCH',
         targetNote: target,
         detectedPitch,
       };
     }
+  }
+
+  /**
+   * Computes the end-of-level grading breakdown across all notes in the partition:
+   * - Which notes were played with the right pitch on the first try
+   * - Which notes were played at the right rhythm
+   */
+  public getGradeSummary(): LevelGradeSummary {
+    const totalNotes = this.partition ? this.partition.notes.length : 0;
+    if (totalNotes === 0) {
+      return {
+        totalNotes: 0,
+        correctPitchNotesCount: 0,
+        onTimeRhythmNotesCount: 0,
+        pitchScorePercent: 100,
+        rhythmScorePercent: 100,
+        overallScorePercent: 100,
+        gradeLabel: 'Excellent',
+        noteRecords: [],
+      };
+    }
+
+    const correctPitchNotesCount = this.noteRecords.filter((r) => r.pitchCorrectFirstTry).length;
+    const onTimeRhythmNotesCount = this.noteRecords.filter((r) => r.rhythmStatus === 'on_time').length;
+
+    const evaluatedCount = Math.max(1, this.noteRecords.length);
+    const pitchScorePercent = Math.round((correctPitchNotesCount / evaluatedCount) * 100);
+    const rhythmScorePercent = Math.round((onTimeRhythmNotesCount / evaluatedCount) * 100);
+    const overallScorePercent = Math.round(pitchScorePercent * 0.6 + rhythmScorePercent * 0.4);
+
+    let gradeLabel: LevelGradeSummary['gradeLabel'] = 'À retravailler';
+    if (overallScorePercent >= 90) {
+      gradeLabel = 'Excellent';
+    } else if (overallScorePercent >= 75) {
+      gradeLabel = 'Très bien';
+    } else if (overallScorePercent >= 60) {
+      gradeLabel = 'Bien';
+    }
+
+    return {
+      totalNotes,
+      correctPitchNotesCount,
+      onTimeRhythmNotesCount,
+      pitchScorePercent,
+      rhythmScorePercent,
+      overallScorePercent,
+      gradeLabel,
+      noteRecords: [...this.noteRecords],
+    };
   }
 
   /**
@@ -212,7 +336,7 @@ export class PracticeEngine {
   }
 
   public getElapsedTimeSeconds(): number {
-    if (this.startTimeMs === 0) return 0;
+    if (!this.hasStartedFirstNote || this.startTimeMs === 0) return 0;
     const end = this.endTimeMs > 0 ? this.endTimeMs : Date.now();
     return Math.floor((end - this.startTimeMs) / 1000);
   }

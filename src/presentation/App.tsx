@@ -17,7 +17,7 @@ import { AndroidSyncModal } from './components/AndroidSyncModal.tsx';
 export default function App() {
   const allPartitions = partitionRepository.getAllPartitions();
 
-  // Pure Domain Session Coordinator (authoritative state for Hub <-> Training & Pitch evaluation)
+  // Pure Domain Session Coordinator (authoritative state for Hub <-> Training & Pitch/Rhythm evaluation)
   const coordinatorRef = useRef<TrainingSessionCoordinator>(
     new TrainingSessionCoordinator(allPartitions[0])
   );
@@ -82,26 +82,19 @@ export default function App() {
     return () => clearInterval(interval);
   }, [session.isCompleted, session.activeScreen]);
 
-  // Grace window timestamp to ignore screen tap / mic startup transients when opening a lesson
-  const ignorePitchUntilRef = useRef<number>(0);
-
   /**
    * Stable Audio Pitch Callback:
    * Delegates directly to TrainingSessionCoordinator instance ref, guaranteeing
    * zero stale React state closures when transitioning from Hub to Training.
    */
   const onPitchDetected = useRef((detected: PitchResult) => {
-    if (Date.now() < ignorePitchUntilRef.current) {
-      return;
-    }
-
     const { snapshot } = coordinatorRef.current.handlePitchDetected(detected);
     setSession(snapshot);
 
     if (snapshot.justCompletedLevel) {
       ProgressStorage.recordLevelCompletion(
         snapshot.selectedPiece.id,
-        snapshot.accuracy,
+        snapshot.gradeSummary.overallScorePercent,
         snapshot.elapsedSeconds
       );
 
@@ -137,16 +130,12 @@ export default function App() {
   };
 
   const resetPiece = (piece?: PartitionPiece) => {
-    ignorePitchUntilRef.current = Date.now() + 650;
-    coordinatorRef.current.clearPitch();
     const snapshot = coordinatorRef.current.resetLevel(piece);
     setSession(snapshot);
     setElapsedSeconds(0);
   };
 
   const handleStartLevel = (level: PartitionPiece) => {
-    ignorePitchUntilRef.current = Date.now() + 650;
-    coordinatorRef.current.clearPitch();
     const snapshot = coordinatorRef.current.startLevel(level);
     setSession(snapshot);
     setElapsedSeconds(0);
@@ -164,6 +153,11 @@ export default function App() {
 
   const handleBackToHub = () => {
     const snapshot = coordinatorRef.current.backToHub();
+    setSession(snapshot);
+  };
+
+  const handleSetTempoBpm = (bpm: number) => {
+    const snapshot = coordinatorRef.current.setTempoBpm(bpm);
     setSession(snapshot);
   };
 
@@ -190,12 +184,16 @@ export default function App() {
           accuracy={session.accuracy}
           elapsedSeconds={elapsedSeconds}
           isCompleted={session.isCompleted}
+          hasPerformanceStarted={session.hasPerformanceStarted}
+          tempoBpm={session.tempoBpm}
+          gradeSummary={session.gradeSummary}
           isListening={isListening}
           currentPitch={session.currentPitch}
           lastMismatch={session.lastMismatch}
           onBackToHub={handleBackToHub}
           onReset={() => resetPiece()}
           onSelectNextLevel={(next) => resetPiece(next)}
+          onSetTempoBpm={handleSetTempoBpm}
           onToggleListening={toggleListening}
           onResumeAudio={resumeAudio}
           onSetSensitivity={(thresh) => {

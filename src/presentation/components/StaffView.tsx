@@ -1,5 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import { MusicalNote, ClefType } from '../../core/models/music.types.ts';
+import { NotePerformanceRecord } from '../../core/models/pitch.types.ts';
 import {
   getDiatonicStaffPosition,
   computeMeasureBarLineIndices,
@@ -11,6 +12,7 @@ export interface StaffViewProps {
   currentIndex: number;
   clef: ClefType;
   timeSignature?: [number, number];
+  noteRecords?: NotePerformanceRecord[];
   lastMismatch: boolean;
 }
 
@@ -19,6 +21,7 @@ export const StaffView: React.FC<StaffViewProps> = ({
   currentIndex,
   clef,
   timeSignature = [4, 4],
+  noteRecords = [],
   lastMismatch,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -164,6 +167,7 @@ export const StaffView: React.FC<StaffViewProps> = ({
 
             const isTarget = index === currentIndex;
             const isCompleted = index < currentIndex;
+            const record = noteRecords[index];
 
             const ledgerLinesBelow: number[] = [];
             if (staffPos <= -6) {
@@ -184,8 +188,11 @@ export const StaffView: React.FC<StaffViewProps> = ({
             let halo = null;
 
             if (isCompleted) {
-              noteColor = '#059669'; // Emerald
-              labelColor = '#059669';
+              // Green if both pitch and rhythm were right, amber if off-rhythm or had a wrong pitch attempt
+              const isClean =
+                !record || (record.pitchCorrectFirstTry && record.rhythmStatus === 'on_time');
+              noteColor = isClean ? '#059669' : '#d97706';
+              labelColor = isClean ? '#059669' : '#b45309';
             } else if (isTarget) {
               noteColor = lastMismatch ? '#dc2626' : '#d97706'; // Red or Amber
               labelColor = lastMismatch ? '#dc2626' : '#b45309';
@@ -206,7 +213,15 @@ export const StaffView: React.FC<StaffViewProps> = ({
             const stemY2 = stemUp ? y - 44 : y + 44;
 
             const beats = getNoteDurationBeats(note.duration);
-            const beatText = beats === 0.5 ? '½t' : `${beats}t`;
+            const baseBeatText = beats === 0.5 ? '½t' : `${beats}t`;
+            const beatText =
+              isCompleted && record
+                ? record.rhythmStatus === 'on_time'
+                  ? `${baseBeatText} ✓`
+                  : record.rhythmStatus === 'early'
+                  ? `${baseBeatText} tôt`
+                  : `${baseBeatText} tard`
+                : baseBeatText;
 
             return (
               <g key={note.id}>
@@ -288,14 +303,22 @@ export const StaffView: React.FC<StaffViewProps> = ({
                   {note.solfegePitch}
                 </text>
 
-                {/* Subtle Rhythm Duration Beat Indicator */}
+                {/* Subtle Rhythm Duration & Timing Indicator */}
                 <text
                   x={x}
                   y={254}
                   textAnchor="middle"
                   fontSize="10"
                   fontWeight="500"
-                  fill={isTarget ? labelColor : '#94a3b8'}
+                  fill={
+                    isCompleted && record
+                      ? record.rhythmStatus === 'on_time'
+                        ? '#059669'
+                        : '#d97706'
+                      : isTarget
+                      ? labelColor
+                      : '#94a3b8'
+                  }
                   className="font-mono select-none"
                 >
                   {beatText}

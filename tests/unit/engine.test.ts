@@ -206,4 +206,43 @@ describe('PracticeEngine Unit Tests (Core Domain)', () => {
     expect(engine.processDetectedPitch(ambientNoise).status).toBe('IGNORED');
     expect(engine.getCurrentIndex()).toBe(0);
   });
+
+  it('should start performance evaluation when the 1st note is played and compute end-of-level Pitch & Rhythm grading', async () => {
+    // At 80 BPM, 1 quarter note beat = 750ms (tolerance = max(280, 0.35 * 750) = 280ms, so 470ms..1030ms is on_time)
+    const do4: PitchResult = { frequency: 261.63, solfegeName: 'Do', octave: 4, midi: 60, cents: 0, confidence: 0.95, rms: 0.05, isPitched: true };
+    const re4: PitchResult = { frequency: 293.66, solfegeName: 'Ré', octave: 4, midi: 62, cents: 0, confidence: 0.95, rms: 0.05, isPitched: true };
+    const mi4: PitchResult = { frequency: 329.63, solfegeName: 'Mi', octave: 4, midi: 64, cents: 0, confidence: 0.95, rms: 0.05, isPitched: true };
+    const wrongFa4: PitchResult = { frequency: 349.23, solfegeName: 'Fa', octave: 4, midi: 65, cents: 0, confidence: 0.95, rms: 0.05, isPitched: true };
+
+    expect(engine.hasPerformanceStarted()).toBe(false);
+    expect(engine.getElapsedTimeSeconds()).toBe(0);
+
+    // 1. Play Note 1 (Do 4) cleanly -> starts evaluation!
+    engine.processDetectedPitch(do4);
+    engine.processDetectedPitch(do4);
+    expect(engine.hasPerformanceStarted()).toBe(true);
+
+    // 2. Wait ~650ms (on-time for 80 BPM quarter note = 750ms) and play Note 2 (Ré 4) cleanly
+    await new Promise((r) => setTimeout(r, 650));
+    engine.processDetectedPitch(re4);
+    engine.processDetectedPitch(re4);
+
+    // 3. Wait ~1150ms (too late for 80 BPM quarter note > 750 + 280 = 1030ms), hit wrong note Fa 4 first, then play Mi 4
+    await new Promise((r) => setTimeout(r, 1150));
+    engine.processDetectedPitch(wrongFa4); // Wrong key strike on Note 3
+    engine.processDetectedPitch(mi4);
+    engine.processDetectedPitch(mi4);
+
+    expect(engine.isCompleted()).toBe(true);
+    const grade = engine.getGradeSummary();
+    expect(grade.totalNotes).toBe(3);
+    expect(grade.correctPitchNotesCount).toBe(2); // Notes 1 & 2 clean, Note 3 had wrongFa4
+    expect(grade.onTimeRhythmNotesCount).toBe(2); // Notes 1 & 2 on_time, Note 3 late
+    expect(grade.noteRecords[0].pitchCorrectFirstTry).toBe(true);
+    expect(grade.noteRecords[0].rhythmStatus).toBe('on_time');
+    expect(grade.noteRecords[1].pitchCorrectFirstTry).toBe(true);
+    expect(grade.noteRecords[1].rhythmStatus).toBe('on_time');
+    expect(grade.noteRecords[2].pitchCorrectFirstTry).toBe(false);
+    expect(grade.noteRecords[2].rhythmStatus).toBe('late');
+  });
 });
