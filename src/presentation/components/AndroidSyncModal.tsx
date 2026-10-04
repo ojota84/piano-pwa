@@ -1,5 +1,5 @@
 import React from 'react';
-import { Smartphone, CheckCircle, Mic, BookOpen, X, Piano } from 'lucide-react';
+import { X } from 'lucide-react';
 
 interface AndroidSyncModalProps {
   isOpen: boolean;
@@ -10,65 +10,44 @@ export const AndroidSyncModal: React.FC<AndroidSyncModalProps> = ({ isOpen, onCl
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl relative text-slate-200">
-        <button
-          onClick={onClose}
-          className="absolute top-5 right-5 p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
-        >
-          <X className="w-4 h-4" />
-        </button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90">
+      <div className="bg-slate-950 border-t border-b border-slate-800 max-w-md w-full py-6 px-4 relative text-slate-200">
+        <div className="flex items-center justify-between pb-4 border-b border-slate-900">
+          <h3 className="text-base font-medium text-slate-100">Guide pratique</h3>
+          <button
+            onClick={onClose}
+            className="text-slate-500 hover:text-slate-200 transition-colors cursor-pointer"
+            aria-label="Fermer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
 
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
-            <Smartphone className="w-5 h-5" />
+        <div className="divide-y divide-slate-900 text-xs text-slate-400 leading-relaxed">
+          <div className="py-3">
+            <strong className="text-slate-200 block mb-0.5">1. Pupitre du piano</strong>
+            <span>Posez votre téléphone sur le pupitre de votre piano, écran face à vous.</span>
           </div>
-          <div>
-            <h3 className="text-lg font-bold text-white">Guide pratique au Piano</h3>
-            <p className="text-xs text-slate-400">Conseils d'utilisation et d'écoute acoustique</p>
+
+          <div className="py-3">
+            <strong className="text-slate-200 block mb-0.5">2. Écoute microphone</strong>
+            <span>Autorisez le microphone. La note entendue s'affiche en direct sous la partition.</span>
+          </div>
+
+          <div className="py-3">
+            <strong className="text-slate-200 block mb-0.5">3. Avancement note à note</strong>
+            <span>La partition attend que vous jouiez la note cible pour passer au vert et avancer automatiquement.</span>
           </div>
         </div>
 
-        <div className="flex flex-col gap-3 text-xs leading-relaxed">
-          <div className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-950/70 border border-slate-800">
-            <Piano className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
-            <div>
-              <strong className="text-white block font-semibold">1. Posez votre téléphone sur le pupitre</strong>
-              <span>Placez votre smartphone au centre du pupitre à partition de votre piano acoustique ou numérique, écran face à vous.</span>
-            </div>
-          </div>
-
-          <div className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-950/70 border border-slate-800">
-            <Mic className="w-4 h-4 text-emerald-400 mt-0.5 shrink-0" />
-            <div>
-              <strong className="text-white block font-semibold">2. Activez l'écoute du micro</strong>
-              <span>Cliquez sur le gros bouton jaune "Démarrer l'écoute". Autorisez l'accès micro si le navigateur le demande. Le niveau vert réagit dès qu'une touche résonne.</span>
-            </div>
-          </div>
-
-          <div className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-950/70 border border-slate-800">
-            <BookOpen className="w-4 h-4 text-blue-400 mt-0.5 shrink-0" />
-            <div>
-              <strong className="text-white block font-semibold">3. Principe "Wait For Me" (Sans stress de tempo)</strong>
-              <span>L'application ne vous presse jamais : le curseur attend patiemment sur la note affichée jusqu'à ce que vous jouiez la bonne touche sur votre piano. Dès qu'elle résonne, elle passe au vert et avance à la note suivante !</span>
-            </div>
-          </div>
-
-          <div className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-950/70 border border-slate-800">
-            <CheckCircle className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
-            <div>
-              <strong className="text-white block font-semibold">4. Réglage de sensibilité</strong>
-              <span>Si vous jouez doucement ou si le piano est feutré, sélectionnez "Haute". Si la pièce a un bruit de fond, choisissez "Basse".</span>
-            </div>
-          </div>
+        <div className="pt-4 border-t border-slate-900 flex justify-end">
+          <button
+            onClick={onClose}
+            className="text-xs font-medium text-amber-400 hover:text-amber-300 transition-colors cursor-pointer"
+          >
+            Fermer
+          </button>
         </div>
-
-        <button
-          onClick={onClose}
-          className="w-full mt-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition-colors"
-        >
-          C'est compris, jouer mon morceau !
-        </button>
       </div>
     </div>
   );
